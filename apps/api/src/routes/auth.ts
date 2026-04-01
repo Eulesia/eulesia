@@ -27,6 +27,10 @@ import {
   shouldUseSecureCookies,
 } from "../utils/cookies.js";
 import {
+  formatBlockingSanctionResponse,
+  getActiveBlockingSanction,
+} from "../utils/sanctions.js";
+import {
   buildIduraAuthorizeUrl,
   completeIduraAuthentication,
   getFtnFailureCodeFromError,
@@ -39,6 +43,29 @@ import type { AuthenticatedRequest } from "../types/index.js";
 
 const router = Router();
 const ftnEnabled = isIduraFtnEnabled();
+
+function isUniqueViolationForConstraint(
+  error: unknown,
+  constraintName: string,
+): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const databaseError = error as {
+    code?: string;
+    constraint_name?: string;
+    constraint?: string;
+    message?: string;
+  };
+
+  return (
+    databaseError.code === "23505" &&
+    (databaseError.constraint_name === constraintName ||
+      databaseError.constraint === constraintName ||
+      databaseError.message?.includes(constraintName) === true)
+  );
+}
 
 async function isRegistrationOpen() {
   const [regSetting] = await db
@@ -393,38 +420,50 @@ router.post(
     const passwordHash = await argon2.hash(password);
 
     // Use transaction to prevent race conditions on username registration
-    const newUser = await db.transaction(async (tx) => {
-      // Check if username already exists
-      const [existing] = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.username, username.toLowerCase()))
-        .limit(1);
+    let newUser;
+    try {
+      newUser = await db.transaction(async (tx) => {
+        // Check if username already exists
+        const [existing] = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.username, username.toLowerCase()))
+          .limit(1);
 
-      if (existing) {
-        throw new AppError(400, "Username already exists");
+        if (existing) {
+          throw new AppError(400, "Username already exists");
+        }
+
+        // Create user — with FTN strong auth data if available
+        const [created] = await tx
+          .insert(users)
+          .values({
+            username: username.toLowerCase(),
+            passwordHash,
+            name,
+            inviteCodesRemaining: 0,
+            identityProvider: "ftn",
+            identityVerified: true,
+            identityLevel: "substantial",
+            verifiedName: `${ftnClaims.givenName} ${ftnClaims.familyName}`,
+            rpSubject: ftnClaims.sub,
+            identityIssuer: "idura_ftn",
+            identityVerifiedAt: new Date(),
+          })
+          .returning();
+
+        return created;
+      });
+    } catch (error) {
+      if (isUniqueViolationForConstraint(error, "users_rp_subject_idx")) {
+        throw new AppError(
+          400,
+          "This identity is already linked to another account",
+        );
       }
 
-      // Create user — with FTN strong auth data if available
-      const [created] = await tx
-        .insert(users)
-        .values({
-          username: username.toLowerCase(),
-          passwordHash,
-          name,
-          inviteCodesRemaining: 0,
-          identityProvider: "ftn",
-          identityVerified: true,
-          identityLevel: "substantial",
-          verifiedName: `${ftnClaims.givenName} ${ftnClaims.familyName}`,
-          rpSubject: ftnClaims.sub,
-          identityIssuer: "idura_ftn",
-          identityVerifiedAt: new Date(),
-        })
-        .returning();
-
-      return created;
-    });
+      throw error;
+    }
 
     if (pendingRegistrationTokenHash) {
       await db
@@ -507,6 +546,12 @@ router.post(
 
     if (!validPassword) {
       res.status(401).json({ success: false, error: "Invalid credentials" });
+      return;
+    }
+
+    const activeSanction = await getActiveBlockingSanction(user.id);
+    if (activeSanction) {
+      res.status(403).json(formatBlockingSanctionResponse(activeSanction));
       return;
     }
 
@@ -601,6 +646,12 @@ router.get(
         .returning();
 
       user = newUser;
+    }
+
+    const activeSanction = await getActiveBlockingSanction(user.id);
+    if (activeSanction) {
+      res.status(403).json(formatBlockingSanctionResponse(activeSanction));
+      return;
     }
 
     // Create session

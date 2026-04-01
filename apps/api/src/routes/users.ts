@@ -220,8 +220,20 @@ router.patch(
   "/me",
   authMiddleware,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user!.id;
+    const currentUser = req.user!;
+    const userId = currentUser.id;
     const updates = updateUserSchema.parse(req.body);
+
+    if (
+      currentUser.identityVerified &&
+      typeof updates.name === "string" &&
+      updates.name !== currentUser.name
+    ) {
+      throw new AppError(
+        400,
+        "Verified accounts cannot change their display name",
+      );
+    }
 
     // Validate municipality if provided
     if (updates.municipalityId) {

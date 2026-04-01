@@ -22,6 +22,7 @@ import {
   healthCheck as meiliHealthCheck,
 } from "./services/search/index.js";
 import { hashToken } from "./utils/crypto.js";
+import { getActiveBlockingSanction } from "./utils/sanctions.js";
 
 // Upload directory (relative to project root)
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "./uploads";
@@ -236,6 +237,17 @@ io.use(async (socket, next) => {
 
     if (!user) {
       return next(new Error("User not found"));
+    }
+
+    const activeSanction = await getActiveBlockingSanction(user.id);
+    if (activeSanction) {
+      return next(
+        new Error(
+          activeSanction.sanctionType === "ban"
+            ? "Account banned"
+            : "Account suspended",
+        ),
+      );
     }
 
     // Attach userId to socket for later use
@@ -516,6 +528,10 @@ async function runMigrations() {
     );
     await db.execute(
       sql`CREATE INDEX IF NOT EXISTS "waitlist_created_idx" ON "waitlist" ("created_at")`,
+    );
+    // 0017: enforce FTN subject uniqueness
+    await db.execute(
+      sql`CREATE UNIQUE INDEX IF NOT EXISTS "users_rp_subject_idx" ON "users" ("rp_subject")`,
     );
 
     console.log("Migrations OK");

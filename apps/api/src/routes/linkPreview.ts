@@ -1,88 +1,55 @@
 import { Router, type Request, type Response } from "express";
-import dns from "dns/promises";
 import { db, linkPreviews } from "../db/index.js";
 import { eq } from "drizzle-orm";
+import {
+  assertExternalHttpUrl,
+  UrlValidationError,
+} from "../utils/urlSecurity.js";
 
 const router = Router();
 
 // Cache TTL: 7 days
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_REDIRECTS = 5;
+const REQUEST_HEADERS = {
+  "User-Agent": "EulesiaBot/1.0 (+https://eulesia.org)",
+  Accept: "text/html,application/xhtml+xml",
+};
 
-// SSRF protection: block internal IPs
-function isInternalUrl(urlString: string): boolean {
-  try {
-    const url = new URL(urlString);
-    const hostname = url.hostname.toLowerCase();
+async function fetchWithValidatedRedirects(
+  urlString: string,
+  signal: AbortSignal,
+): Promise<{ response: globalThis.Response; finalUrl: URL }> {
+  let currentUrl = urlString;
 
-    // Block obvious internal hostnames
-    if (hostname === "localhost" || hostname === "0.0.0.0") return true;
+  for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
+    const parsedUrl = await assertExternalHttpUrl(currentUrl);
+    const response = await fetch(parsedUrl, {
+      signal,
+      redirect: "manual",
+      headers: REQUEST_HEADERS,
+    });
 
-    // Block internal IP ranges
-    const parts = hostname.split(".");
-    if (parts.length === 4 && parts.every((p) => /^\d+$/.test(p))) {
-      const first = parseInt(parts[0]);
-      const second = parseInt(parts[1]);
-      if (first === 127) return true; // 127.x.x.x
-      if (first === 10) return true; // 10.x.x.x
-      if (first === 172 && second >= 16 && second <= 31) return true; // 172.16-31.x.x
-      if (first === 192 && second === 168) return true; // 192.168.x.x
-      if (first === 169 && second === 254) return true; // 169.254.x.x (link-local)
-      if (first === 0) return true; // 0.x.x.x
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      await response.body?.cancel();
+
+      if (!location) {
+        throw new Error("Redirect missing location");
+      }
+
+      if (redirectCount === MAX_REDIRECTS) {
+        throw new Error("Too many redirects");
+      }
+
+      currentUrl = new URL(location, parsedUrl).toString();
+      continue;
     }
 
-    // Block IPv6 loopback
-    if (hostname === "[::1]" || hostname === "::1") return true;
+    return { response, finalUrl: parsedUrl };
+  }
 
-    return false;
-  } catch {
-    return true;
-  }
-}
-
-// Check if a resolved IP address is internal/private
-function isInternalIp(ip: string): boolean {
-  const parts = ip.split(".");
-  if (parts.length === 4 && parts.every((p) => /^\d+$/.test(p))) {
-    const first = parseInt(parts[0]);
-    const second = parseInt(parts[1]);
-    if (first === 127) return true;
-    if (first === 10) return true;
-    if (first === 172 && second >= 16 && second <= 31) return true;
-    if (first === 192 && second === 168) return true;
-    if (first === 169 && second === 254) return true;
-    if (first === 0) return true;
-  }
-  // IPv6 loopback
-  if (
-    ip === "::1" ||
-    ip === "::" ||
-    ip.startsWith("fe80:") ||
-    ip.startsWith("fc00:") ||
-    ip.startsWith("fd")
-  )
-    return true;
-  return false;
-}
-
-// Resolve hostname and check if it points to an internal IP (DNS rebinding protection)
-async function resolvesToInternalIp(hostname: string): Promise<boolean> {
-  try {
-    const addresses = await dns.resolve4(hostname);
-    for (const addr of addresses) {
-      if (isInternalIp(addr)) return true;
-    }
-  } catch {
-    // If DNS resolution fails, allow the request — the fetch will fail anyway
-  }
-  try {
-    const addresses = await dns.resolve6(hostname);
-    for (const addr of addresses) {
-      if (isInternalIp(addr)) return true;
-    }
-  } catch {
-    // IPv6 resolution failure is fine
-  }
-  return false;
+  throw new Error("Too many redirects");
 }
 
 // Parse OG metadata from HTML
@@ -203,31 +170,20 @@ router.get("/link-preview", async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: "URL required" });
     }
 
-    // Validate URL
-    let parsedUrl: URL;
     try {
-      parsedUrl = new URL(url);
-    } catch {
-      return res.status(400).json({ success: false, error: "Invalid URL" });
-    }
+      await assertExternalHttpUrl(url);
+    } catch (error) {
+      if (error instanceof UrlValidationError) {
+        const validationError =
+          error.code === "invalid_url"
+            ? "Invalid URL"
+            : error.code === "unsupported_protocol"
+              ? "Only HTTP/HTTPS URLs supported"
+              : "Internal URLs not allowed";
 
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Only HTTP/HTTPS URLs supported" });
-    }
-
-    if (isInternalUrl(url)) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Internal URLs not allowed" });
-    }
-
-    // DNS resolution check — prevent domain-to-internal-IP bypass (SSRF)
-    if (await resolvesToInternalIp(parsedUrl.hostname)) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Internal URLs not allowed" });
+        return res.status(400).json({ success: false, error: validationError });
+      }
+      throw error;
     }
 
     // Check cache
@@ -264,17 +220,19 @@ router.get("/link-preview", async (req: Request, res: Response) => {
     const timeout = setTimeout(() => controller.abort(), 5000);
 
     let response: globalThis.Response;
+    let finalUrl: URL;
     try {
-      response = await fetch(url, {
-        signal: controller.signal,
-        redirect: "follow",
-        headers: {
-          "User-Agent": "EulesiaBot/1.0 (+https://eulesia.org)",
-          Accept: "text/html,application/xhtml+xml",
-        },
-      });
-    } catch {
+      ({ response, finalUrl } = await fetchWithValidatedRedirects(
+        url,
+        controller.signal,
+      ));
+    } catch (error) {
       clearTimeout(timeout);
+      if (error instanceof UrlValidationError) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Internal URLs not allowed" });
+      }
       // Cache the error
       await upsertPreview(url, { error: true });
       return res
@@ -322,7 +280,7 @@ router.get("/link-preview", async (req: Request, res: Response) => {
     reader.cancel();
 
     // Parse metadata
-    const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
+    const baseUrl = `${finalUrl.protocol}//${finalUrl.host}`;
     const metadata = parseOgMetadata(html, baseUrl);
 
     if (!metadata.title) {

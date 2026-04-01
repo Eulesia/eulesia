@@ -1,8 +1,12 @@
 import type { Response, NextFunction } from "express";
-import { eq, and, gt, isNull, or, inArray } from "drizzle-orm";
-import { db, sessions, users, userSanctions } from "../db/index.js";
+import { eq, and, gt } from "drizzle-orm";
+import { db, sessions, users } from "../db/index.js";
 import { hashToken } from "../utils/crypto.js";
 import { getSessionCookieOptions } from "../utils/cookies.js";
+import {
+  formatBlockingSanctionResponse,
+  getActiveBlockingSanction,
+} from "../utils/sanctions.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 
 export async function authMiddleware(
@@ -50,33 +54,10 @@ export async function authMiddleware(
     }
 
     // Check for active bans/suspensions
-    const [activeSanction] = await db
-      .select()
-      .from(userSanctions)
-      .where(
-        and(
-          eq(userSanctions.userId, user.id),
-          inArray(userSanctions.sanctionType, ["suspension", "ban"]),
-          isNull(userSanctions.revokedAt),
-          or(
-            isNull(userSanctions.expiresAt),
-            gt(userSanctions.expiresAt, new Date()),
-          ),
-        ),
-      )
-      .limit(1);
+    const activeSanction = await getActiveBlockingSanction(user.id);
 
     if (activeSanction) {
-      res.status(403).json({
-        success: false,
-        error:
-          activeSanction.sanctionType === "ban"
-            ? "Account banned"
-            : "Account suspended",
-        sanctionType: activeSanction.sanctionType,
-        reason: activeSanction.reason,
-        expiresAt: activeSanction.expiresAt?.toISOString() || null,
-      });
+      res.status(403).json(formatBlockingSanctionResponse(activeSanction));
       return;
     }
 
@@ -140,21 +121,7 @@ export async function optionalAuthMiddleware(
       return;
     }
 
-    const [activeSanction] = await db
-      .select()
-      .from(userSanctions)
-      .where(
-        and(
-          eq(userSanctions.userId, user.id),
-          inArray(userSanctions.sanctionType, ["suspension", "ban"]),
-          isNull(userSanctions.revokedAt),
-          or(
-            isNull(userSanctions.expiresAt),
-            gt(userSanctions.expiresAt, new Date()),
-          ),
-        ),
-      )
-      .limit(1);
+    const activeSanction = await getActiveBlockingSanction(user.id);
 
     if (activeSanction) {
       next();

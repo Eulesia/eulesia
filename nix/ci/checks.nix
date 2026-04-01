@@ -8,7 +8,7 @@
   }: let
     repoSrc = pkgs.lib.cleanSource ../../.;
     nodejs = pkgs.nodejs_22;
-    npmDepsHash = "sha256-nTX99k52YKspf9xvdXHk2jXdMpj03aDQymYLPs2MRHM=";
+    npmDepsHash = "sha256-R87ScebRdFaS2a0++e0WPjr5Rh5L9gBapTTpmltbIaI=";
     nativeBuildInputs = with pkgs; [
       python3
       pkg-config
