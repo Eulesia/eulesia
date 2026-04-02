@@ -100,7 +100,7 @@ jobs:
           echo "Verifying auth config..."
           $SSH "curl -fsS -H 'Host: eulesia.org' http://127.0.0.1:8080/api/v1/auth/config" > /tmp/auth-config.json
           cat /tmp/auth-config.json
-          jq -e '.registrationMode == "ftn-open"' /tmp/auth-config.json >/dev/null
+          jq -e '.success == true and .data.registrationMode == "ftn-open"' /tmp/auth-config.json >/dev/null
           echo "All health checks passed."
 
       - name: Generate deploy summary
