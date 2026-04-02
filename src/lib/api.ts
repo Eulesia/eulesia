@@ -1092,6 +1092,22 @@ class ApiClient {
     });
   }
 
+  async generateAdminInvites(count: number): Promise<GeneratedAdminInvite[]> {
+    return this.request("/admin/invites/generate", {
+      method: "POST",
+      body: JSON.stringify({ count }),
+    });
+  }
+
+  async getAdminInvites(
+    status?: "available" | "used" | "revoked",
+  ): Promise<AdminInvite[]> {
+    const searchParams = new URLSearchParams();
+    if (status) searchParams.set("status", status);
+    const query = searchParams.toString();
+    return this.request(`/admin/invites${query ? `?${query}` : ""}`);
+  }
+
   // ─── User reports & appeals ──────────────────────────────
 
   async submitReport(data: SubmitReportData): Promise<ContentReportResponse> {
@@ -1345,6 +1361,8 @@ export interface User {
     locale: string;
   };
   onboardingCompletedAt?: string | null;
+  isManagedAccount?: boolean;
+  hasPassword?: boolean;
   createdAt: string;
 }
 
@@ -2080,6 +2098,7 @@ export interface AdminUser {
   avatarUrl?: string;
   role: "citizen" | "institution" | "admin";
   managedBy?: string | null;
+  isManagedAccount?: boolean;
   institutionType?: string;
   institutionName?: string;
   identityVerified: boolean;
@@ -2124,8 +2143,16 @@ export interface AdminReport {
 }
 
 export interface AdminReportDetail extends AdminReport {
-  content: any;
+  content: AdminReportContentPreview | null;
   assignedTo?: string;
+}
+
+export interface AdminReportContentPreview {
+  title?: string;
+  content?: string;
+  name?: string;
+  authorId?: string;
+  [key: string]: unknown;
 }
 
 export interface ModLogEntry {
@@ -2134,7 +2161,7 @@ export interface ModLogEntry {
   targetType: string;
   targetId: string;
   reason: string;
-  metadata: any;
+  metadata?: Record<string, unknown> | null;
   createdAt: string;
   adminName: string;
   adminUserId: string;
@@ -2229,6 +2256,18 @@ export interface SystemAnnouncement {
 export interface AdminAnnouncement extends SystemAnnouncement {
   active: boolean;
   createdByName: string | null;
+}
+
+export interface GeneratedAdminInvite {
+  id: string;
+  code: string;
+  createdAt: string;
+}
+
+export interface AdminInvite extends GeneratedAdminInvite {
+  status: "available" | "used" | "revoked";
+  usedAt: string | null;
+  usedBy: { name: string } | null;
 }
 
 // Institution management types

@@ -23,7 +23,6 @@ import { notify } from "../services/notify.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import {
   formatUserSummaryForResponse as formatUserSummary,
-  getPublicUserId,
   isSopsManagedOperatorAccount,
 } from "../utils/operatorAccounts.js";
 

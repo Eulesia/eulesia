@@ -9,20 +9,21 @@ import type {
 // Query keys
 export const adminKeys = {
   dashboard: ["admin", "dashboard"] as const,
-  users: (params?: any) => ["admin", "users", params] as const,
+  users: (params?: unknown) => ["admin", "users", params] as const,
   user: (id: string) => ["admin", "user", id] as const,
   userSanctions: (id: string) => ["admin", "userSanctions", id] as const,
-  reports: (params?: any) => ["admin", "reports", params] as const,
+  reports: (params?: unknown) => ["admin", "reports", params] as const,
   report: (id: string) => ["admin", "report", id] as const,
-  modlog: (params?: any) => ["admin", "modlog", params] as const,
+  modlog: (params?: unknown) => ["admin", "modlog", params] as const,
   transparency: (from?: string, to?: string) =>
     ["admin", "transparency", from, to] as const,
-  appeals: (params?: any) => ["admin", "appeals", params] as const,
+  appeals: (params?: unknown) => ["admin", "appeals", params] as const,
   settings: ["admin", "settings"] as const,
+  invites: (status?: string) => ["admin", "invites", status] as const,
   mySanctions: ["mySanctions"] as const,
   announcements: ["admin", "announcements"] as const,
   institutionClaims: ["admin", "institutionClaims"] as const,
-  waitlist: (params?: any) => ["admin", "waitlist", params] as const,
+  waitlist: (params?: unknown) => ["admin", "waitlist", params] as const,
   waitlistStats: ["admin", "waitlistStats"] as const,
 };
 
@@ -270,6 +271,25 @@ export function useUpdateAdminSettings() {
       api.updateAdminSettings(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adminKeys.settings });
+      queryClient.invalidateQueries({ queryKey: adminKeys.modlog() });
+    },
+  });
+}
+
+export function useAdminInvites(status?: "available" | "used" | "revoked") {
+  return useQuery({
+    queryKey: adminKeys.invites(status),
+    queryFn: () => api.getAdminInvites(status),
+  });
+}
+
+export function useGenerateAdminInvites() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (count: number) => api.generateAdminInvites(count),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "invites"] });
       queryClient.invalidateQueries({ queryKey: adminKeys.modlog() });
     },
   });

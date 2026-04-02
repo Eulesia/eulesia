@@ -82,7 +82,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       "user_typing_dm",
       (data: { conversationId: string; userId: string }) => {
         if (data.userId === currentUser.id) return;
-        addTypingUser("dm", data.conversationId, data.userId);
+        addTypingUser(data.conversationId, data.userId);
       },
     );
 
@@ -182,7 +182,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
         // Update unread DM badge
         queryClient.invalidateQueries({ queryKey: queryKeys.dmUnreadCount });
         // Clear typing for the user who sent the message
-        clearTypingUser("dm", data.conversationId, data.message.author?.id);
+        clearTypingUser(data.conversationId, data.message.author?.id);
       },
     );
 
@@ -213,11 +213,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     };
   }, [isAuthenticated, currentUser, queryClient]);
 
-  function addTypingUser(
-    type: "dm",
-    channelId: string,
-    userId: string,
-  ) {
+  function addTypingUser(channelId: string, userId: string) {
     const timeouts = dmTypingTimeouts;
     const setter = setTypingInDm;
 
@@ -240,15 +236,11 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       timeouts.current[channelId] = {};
     }
     timeouts.current[channelId][userId] = setTimeout(() => {
-      clearTypingUser(type, channelId, userId);
+      clearTypingUser(channelId, userId);
     }, TYPING_TIMEOUT_MS);
   }
 
-  function clearTypingUser(
-    type: "dm",
-    channelId: string,
-    userId?: string | null,
-  ) {
+  function clearTypingUser(channelId: string, userId?: string | null) {
     if (!userId) return;
     const timeouts = dmTypingTimeouts;
     const setter = setTypingInDm;

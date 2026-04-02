@@ -26,7 +26,6 @@ import {
   useCompleteOnboarding,
 } from "../hooks/useApi";
 import { useAuth } from "../hooks/useAuth";
-import { useGuide } from "../hooks/useGuide";
 import type {
   Thread as ApiThread,
   FeedScope,
@@ -86,8 +85,6 @@ export function AgoraPage() {
   );
   const onboardingDone = !!currentUser?.onboardingCompletedAt;
   const completeOnboardingMutation = useCompleteOnboarding();
-
-  const { hasCompletedGuide, startGuide, isGuideActive } = useGuide();
 
   const { data: subscriptionsData } = useSubscriptions();
 

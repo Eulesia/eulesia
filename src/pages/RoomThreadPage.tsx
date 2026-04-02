@@ -178,7 +178,14 @@ export function RoomThreadPage() {
     );
   }
 
-  const author = transformAuthor(thread.author);
+  const author = transformAuthor(
+    thread.author ?? {
+      id: null,
+      name: "Unknown user",
+      role: "citizen",
+      canViewProfile: false,
+    },
+  );
   const comments = thread.comments?.map(transformComment) || [];
   const isRoomOwner = thread.isRoomOwner;
   const isThreadAuthor = currentUser?.id === thread.author?.id;

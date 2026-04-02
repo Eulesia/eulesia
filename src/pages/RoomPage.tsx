@@ -19,7 +19,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Layout } from "../components/layout";
 import { SEOHead } from "../components/SEOHead";
-import { ActorBadge, ConfirmDeleteDialog } from "../components/common";
+import { ActorBadge } from "../components/common";
 import {
   useRoom,
   useCreateRoomThread,

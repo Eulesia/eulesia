@@ -4,6 +4,8 @@ import { AdminLayout } from "../../components/admin";
 import {
   useAdminSettings,
   useUpdateAdminSettings,
+  useAdminInvites,
+  useGenerateAdminInvites,
   useAdminAnnouncements,
   useCreateAnnouncement,
   useToggleAnnouncement,
@@ -19,6 +21,10 @@ import {
   Trash2,
   Eye,
   EyeOff,
+  Gift,
+  Plus,
+  Check,
+  Copy,
 } from "lucide-react";
 
 function ToggleSwitch({
@@ -51,9 +57,14 @@ export function AdminSettingsPage() {
   const { t } = useTranslation("admin");
   const { data: settings, isLoading } = useAdminSettings();
   const updateSettings = useUpdateAdminSettings();
+  const { data: adminInvites, isLoading: invitesLoading } = useAdminInvites();
+  const generateInvites = useGenerateAdminInvites();
   const [registrationOpenDraft, setRegistrationOpenDraft] = useState<
     boolean | null
   >(null);
+  const [generateCount, setGenerateCount] = useState(5);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [copiedAll, setCopiedAll] = useState(false);
 
   // Announcement state
   const { data: adminAnnouncements } = useAdminAnnouncements();
@@ -116,83 +127,6 @@ export function AdminSettingsPage() {
       </div>
 
       <div className="space-y-6 max-w-2xl">
-        {/* Invite system */}
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-              <TicketCheck className="w-4 h-4 text-blue-600" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-gray-900 dark:text-gray-100">
-                {t("settings.inviteSystem")}
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {t("settings.inviteSystemDesc")}
-              </p>
-            </div>
-          </div>
-
-          <div className="p-6 space-y-5">
-            {/* Invite toggle */}
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                  {t("settings.invitesEnabled")}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  {t("settings.invitesEnabledDesc")}
-                </p>
-              </div>
-              <ToggleSwitch
-                enabled={invitesEnabled}
-                onChange={(val) => {
-                  setInvitesEnabled(val);
-                  setHasChanges(true);
-                }}
-              />
-            </div>
-
-            {/* Default invite count */}
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                  {t("settings.defaultInviteCount")}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  {t("settings.defaultInviteCountDesc")}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    if (defaultInviteCount > 0) {
-                      setDefaultInviteCount(defaultInviteCount - 1);
-                      setHasChanges(true);
-                    }
-                  }}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                >
-                  −
-                </button>
-                <span className="w-10 text-center font-semibold text-gray-900 dark:text-gray-100 dark:text-gray-100">
-                  {defaultInviteCount}
-                </span>
-                <button
-                  onClick={() => {
-                    if (defaultInviteCount < 50) {
-                      setDefaultInviteCount(defaultInviteCount + 1);
-                      setHasChanges(true);
-                    }
-                  }}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Admin invite generation */}
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">

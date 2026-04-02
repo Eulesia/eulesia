@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
-  Users,
   ChevronDown,
   Lock,
   Unlock,
