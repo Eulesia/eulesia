@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import { eq } from "drizzle-orm";
 import { db, adminAccounts, adminSessions } from "../db/index.js";
-import { verifyPassword } from "../utils/crypto.js";
+import { verifyPassword, hashPassword } from "../utils/crypto.js";
 import { generateSessionToken } from "../utils/crypto.js";
 import { getAdminSessionCookieOptions } from "../utils/cookies.js";
 import { adminAuthMiddleware } from "../middleware/adminAuth.js";
@@ -100,6 +100,47 @@ router.get(
         name: admin.name,
       },
     });
+  }),
+);
+
+// POST /admin/auth/change-password
+router.post(
+  "/change-password",
+  adminAuthMiddleware,
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      res
+        .status(400)
+        .json({ success: false, error: "Current and new password required" });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      res.status(400).json({
+        success: false,
+        error: "Password must be at least 6 characters",
+      });
+      return;
+    }
+
+    const admin = req.admin!;
+    const valid = await verifyPassword(admin.passwordHash, currentPassword);
+    if (!valid) {
+      res
+        .status(401)
+        .json({ success: false, error: "Current password is incorrect" });
+      return;
+    }
+
+    const newHash = await hashPassword(newPassword);
+    await db
+      .update(adminAccounts)
+      .set({ passwordHash: newHash, updatedAt: new Date() })
+      .where(eq(adminAccounts.id, admin.id));
+
+    res.json({ success: true });
   }),
 );
 

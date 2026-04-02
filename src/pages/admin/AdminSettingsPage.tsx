@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AdminLayout } from "../../components/admin";
+import { useAdminAuth } from "../../hooks/useAdminAuth";
 import {
   useAdminSettings,
   useUpdateAdminSettings,
@@ -14,6 +15,7 @@ import {
 import {
   Users,
   ShieldCheck,
+  KeyRound,
   Loader2,
   Save,
   Info,
@@ -26,6 +28,7 @@ import {
   Check,
   Copy,
 } from "lucide-react";
+import { API_BASE_URL } from "../../lib/runtimeConfig";
 
 function ToggleSwitch({
   enabled,
@@ -50,6 +53,167 @@ function ToggleSwitch({
         }`}
       />
     </button>
+  );
+}
+
+function AdminPasswordChangeCard() {
+  const { admin } = useAdminAuth();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+
+    if (newPassword.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/v1/admin/auth/change-password`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ currentPassword, newPassword }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setError(data.error || "Failed to change password");
+        return;
+      }
+      setSuccess(true);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
+        <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+          <KeyRound className="w-4 h-4 text-blue-600" />
+        </div>
+        <div>
+          <h2 className="font-semibold text-gray-900 dark:text-gray-100">
+            Change password
+          </h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {admin?.username}
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="p-6 space-y-3">
+        {error && (
+          <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm rounded-lg">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 text-sm rounded-lg">
+            Password changed successfully
+          </div>
+        )}
+
+        <div>
+          <label
+            htmlFor="admin-current-pw"
+            className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
+            Current password
+          </label>
+          <input
+            id="admin-current-pw"
+            type="password"
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(e) => {
+              setCurrentPassword(e.target.value);
+              setError(null);
+              setSuccess(false);
+            }}
+            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="admin-new-pw"
+            className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
+            New password
+          </label>
+          <input
+            id="admin-new-pw"
+            type="password"
+            autoComplete="new-password"
+            minLength={6}
+            value={newPassword}
+            onChange={(e) => {
+              setNewPassword(e.target.value);
+              setError(null);
+              setSuccess(false);
+            }}
+            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="admin-confirm-pw"
+            className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
+            Confirm new password
+          </label>
+          <input
+            id="admin-confirm-pw"
+            type="password"
+            autoComplete="new-password"
+            minLength={6}
+            value={confirmPassword}
+            onChange={(e) => {
+              setConfirmPassword(e.target.value);
+              setError(null);
+              setSuccess(false);
+            }}
+            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
+          />
+        </div>
+
+        <div className="pt-2">
+          <button
+            type="submit"
+            disabled={loading}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading ? "Changing..." : "Change password"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -127,6 +291,9 @@ export function AdminSettingsPage() {
       </div>
 
       <div className="space-y-6 max-w-2xl">
+        {/* Password change */}
+        <AdminPasswordChangeCard />
+
         {/* Admin invite generation */}
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
