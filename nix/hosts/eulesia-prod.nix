@@ -107,6 +107,21 @@
             proxy_set_header X-Forwarded-Proto $eulesia_forwarded_proto;
           '';
         };
+
+        "admin.eulesia.org".locations = {
+          "/.well-known/".extraConfig = ''
+            proxy_set_header X-Forwarded-Proto $eulesia_forwarded_proto;
+          '';
+          "/api/".extraConfig = ''
+            proxy_set_header X-Forwarded-Proto $eulesia_forwarded_proto;
+          '';
+          "/health".extraConfig = ''
+            proxy_set_header X-Forwarded-Proto $eulesia_forwarded_proto;
+          '';
+          "/uploads/".extraConfig = ''
+            proxy_set_header X-Forwarded-Proto $eulesia_forwarded_proto;
+          '';
+        };
       };
     };
 
@@ -172,6 +187,16 @@
             ];
             tls.certResolver = "letsencrypt";
           };
+
+          eulesia-admin = {
+            rule = "Host(`admin.eulesia.org`)";
+            service = "eulesia";
+            entryPoints = ["websecure"];
+            middlewares = [
+              "security-headers"
+            ];
+            tls.certResolver = "letsencrypt";
+          };
         };
 
         services.eulesia.loadBalancer.servers = [
@@ -188,6 +213,7 @@
       frontendPackage = eulesiaPackages.frontend;
       appDomain = "eulesia.org";
       apiDomain = "api.eulesia.org";
+      adminDomain = "admin.eulesia.org";
       tls = {
         enable = false;
         acmeEmail = null;
@@ -208,6 +234,7 @@
           config.sops.secrets."admin-accounts.json".path;
         sessionSecretFile = config.sops.secrets."session-secret".path;
         registrationMode = "ftn-open";
+        cookieDomain = ".eulesia.org";
         idura = {
           enable = true;
           domain = "eulesia.idura.broker";

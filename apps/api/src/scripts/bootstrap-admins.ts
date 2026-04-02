@@ -72,11 +72,14 @@ async function upsertBootstrapAdmin(account: BootstrapAdminAccount) {
   };
 
   if (!existing) {
+    const passwordDecision = await resolveBootstrapAdminPassword({
+      seedPassword: account.password,
+    });
     const [created] = await db
       .insert(users)
       .values({
         ...baseValues,
-        passwordHash: account.passwordHash,
+        passwordHash: passwordDecision.passwordHash,
       })
       .returning({
         id: users.id,
@@ -91,9 +94,9 @@ async function upsertBootstrapAdmin(account: BootstrapAdminAccount) {
     );
   }
 
-  const passwordDecision = resolveBootstrapAdminPassword({
+  const passwordDecision = await resolveBootstrapAdminPassword({
     existingPasswordHash: existing.passwordHash,
-    seedPasswordHash: account.passwordHash,
+    seedPassword: account.password,
     reseedPassword: account.reseedPassword,
   });
   const values = {

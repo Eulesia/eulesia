@@ -51,9 +51,7 @@ export async function runStartupMigrations() {
   await db.execute(
     sql`ALTER TABLE "club_comments" ADD COLUMN IF NOT EXISTS "is_hidden" boolean DEFAULT false`,
   );
-  await db.execute(
-    sql`ALTER TABLE "room_messages" ADD COLUMN IF NOT EXISTS "is_hidden" boolean DEFAULT false`,
-  );
+  // room_messages is_hidden removed — table dropped by migration 0017
   // 0013: DSA moderation tables
   await db.execute(
     sql`DO $$ BEGIN CREATE TYPE report_reason AS ENUM ('illegal', 'harassment', 'spam', 'misinformation', 'other'); EXCEPTION WHEN duplicate_object THEN null; END $$`,
@@ -235,8 +233,8 @@ export async function runStartupMigrations() {
   await db.execute(
     sql`CREATE INDEX IF NOT EXISTS "room_comment_votes_comment_idx" ON "room_comment_votes" ("comment_id")`,
   );
-  // Rename message_count -> thread_count
+  // Rename message_count -> thread_count (idempotent)
   await db.execute(
-    sql`ALTER TABLE "rooms" RENAME COLUMN "message_count" TO "thread_count"`,
+    sql`DO $$ BEGIN ALTER TABLE "rooms" RENAME COLUMN "message_count" TO "thread_count"; EXCEPTION WHEN undefined_column THEN null; END $$`,
   );
 }

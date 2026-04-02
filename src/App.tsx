@@ -214,7 +214,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   if (currentUser?.role !== "admin") {
@@ -242,6 +242,12 @@ function AppRoutes() {
         {/* Public routes */}
         <Route
           path="/"
+          element={
+            isAuthenticated ? <Navigate to="/agora" replace /> : <LoginPage />
+          }
+        />
+        <Route
+          path="/login"
           element={
             isAuthenticated ? <Navigate to="/agora" replace /> : <LoginPage />
           }

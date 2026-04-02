@@ -20,7 +20,7 @@ describe("parseBootstrapAdminAccounts", () => {
             managedKey: "ok",
             username: "ab", // too short (min 3)
             name: "Test",
-            passwordHash: "$argon2id$test",
+            password: "test-password",
           },
         ]),
       ),
@@ -35,7 +35,7 @@ describe("parseBootstrapAdminAccounts", () => {
           username: "Ops_Julius",
           email: "Ops+Julius@Eulesia.org",
           name: "Julius Ops",
-          passwordHash: "$argon2id$test",
+          password: "test-password",
         },
       ]),
     );
@@ -46,7 +46,7 @@ describe("parseBootstrapAdminAccounts", () => {
         username: "ops_julius",
         email: "ops+julius@eulesia.org",
         name: "Julius Ops",
-        passwordHash: "$argon2id$test",
+        password: "test-password",
         reseedPassword: false,
       },
     ]);
@@ -60,13 +60,13 @@ describe("parseBootstrapAdminAccounts", () => {
             managedKey: "ops_one",
             username: "ops_admin",
             name: "One",
-            passwordHash: "$argon2id$one",
+            password: "password-one",
           },
           {
             managedKey: "ops_two",
             username: "OPS_ADMIN",
             name: "Two",
-            passwordHash: "$argon2id$two",
+            password: "password-two",
           },
         ]),
       ),
@@ -82,14 +82,14 @@ describe("parseBootstrapAdminAccounts", () => {
             username: "ops_one",
             email: "ops@example.org",
             name: "One",
-            passwordHash: "$argon2id$one",
+            password: "password-one",
           },
           {
             managedKey: "ops_two",
             username: "ops_two",
             email: "OPS@example.org",
             name: "Two",
-            passwordHash: "$argon2id$two",
+            password: "password-two",
           },
         ]),
       ),
@@ -104,13 +104,13 @@ describe("parseBootstrapAdminAccounts", () => {
             managedKey: "ops_julius",
             username: "ops_one",
             name: "One",
-            passwordHash: "$argon2id$one",
+            password: "password-one",
           },
           {
             managedKey: "OPS_JULIUS",
             username: "ops_two",
             name: "Two",
-            passwordHash: "$argon2id$two",
+            password: "password-two",
           },
         ]),
       ),
@@ -119,41 +119,33 @@ describe("parseBootstrapAdminAccounts", () => {
 });
 
 describe("resolveBootstrapAdminPassword", () => {
-  it("preserves an existing password hash by default", () => {
-    expect(
-      resolveBootstrapAdminPassword({
-        existingPasswordHash: "$argon2id$current",
-        seedPasswordHash: "$argon2id$seed",
-      }),
-    ).toEqual({
-      passwordHash: "$argon2id$current",
-      revokeSessions: false,
+  it("preserves an existing password hash by default", async () => {
+    const result = await resolveBootstrapAdminPassword({
+      existingPasswordHash: "$argon2id$current",
+      seedPassword: "seed-password",
     });
+    expect(result.passwordHash).toBe("$argon2id$current");
+    expect(result.revokeSessions).toBe(false);
   });
 
-  it("seeds a missing password hash", () => {
-    expect(
-      resolveBootstrapAdminPassword({
-        existingPasswordHash: "",
-        seedPasswordHash: "$argon2id$seed",
-      }),
-    ).toEqual({
-      passwordHash: "$argon2id$seed",
-      revokeSessions: true,
+  it("hashes and seeds a missing password", async () => {
+    const result = await resolveBootstrapAdminPassword({
+      existingPasswordHash: "",
+      seedPassword: "seed-password",
     });
+    expect(result.passwordHash).toMatch(/^\$argon2/);
+    expect(result.revokeSessions).toBe(true);
   });
 
-  it("reseeds when explicitly requested", () => {
-    expect(
-      resolveBootstrapAdminPassword({
-        existingPasswordHash: "$argon2id$current",
-        seedPasswordHash: "$argon2id$seed",
-        reseedPassword: true,
-      }),
-    ).toEqual({
-      passwordHash: "$argon2id$seed",
-      revokeSessions: true,
+  it("reseeds when explicitly requested", async () => {
+    const result = await resolveBootstrapAdminPassword({
+      existingPasswordHash: "$argon2id$current",
+      seedPassword: "seed-password",
+      reseedPassword: true,
     });
+    expect(result.passwordHash).toMatch(/^\$argon2/);
+    expect(result.passwordHash).not.toBe("$argon2id$current");
+    expect(result.revokeSessions).toBe(true);
   });
 });
 
@@ -165,7 +157,7 @@ describe("selectExistingBootstrapAdmin", () => {
         username: "juliuskoskela",
         email: "julius.koskela@digimuoto.com",
         name: "Julius Koskela",
-        passwordHash: "$argon2id$seed",
+        password: "seed-password",
         reseedPassword: false,
       },
       [
@@ -189,7 +181,7 @@ describe("selectExistingBootstrapAdmin", () => {
         username: "juliuskoskela",
         email: "julius.koskela@digimuoto.com",
         name: "Julius Koskela",
-        passwordHash: "$argon2id$seed",
+        password: "seed-password",
         reseedPassword: false,
       },
       [
@@ -213,7 +205,7 @@ describe("selectExistingBootstrapAdmin", () => {
         username: "juliuskoskela",
         email: "julius.koskela@digimuoto.com",
         name: "Julius Koskela",
-        passwordHash: "$argon2id$seed",
+        password: "seed-password",
         reseedPassword: false,
       },
       [
@@ -237,7 +229,7 @@ describe("selectExistingBootstrapAdmin", () => {
         username: "juliuskoskela",
         email: "julius.koskela@digimuoto.com",
         name: "Julius Koskela",
-        passwordHash: "$argon2id$seed",
+        password: "seed-password",
         reseedPassword: false,
       },
       [
@@ -262,7 +254,7 @@ describe("selectExistingBootstrapAdmin", () => {
           username: "juliuskoskela",
           email: "julius.koskela@digimuoto.com",
           name: "Julius Koskela",
-          passwordHash: "$argon2id$seed",
+          password: "seed-password",
           reseedPassword: false,
         },
         [

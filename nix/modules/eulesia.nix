@@ -144,6 +144,12 @@ in {
       description = "API domain.";
     };
 
+    adminDomain = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Admin panel domain. When set, creates an nginx vhost that redirects / to /admin.";
+    };
+
     api = {
       listenAddress = mkOption {
         type = types.str;
@@ -488,56 +494,87 @@ in {
             ~*${ogBotRegex} 1;
           }
         '';
-        virtualHosts = {
-          ${cfg.apiDomain} = {
-            enableACME = cfg.tls.enable;
-            forceSSL = cfg.tls.enable;
-            locations = {
-              "/" = {
-                proxyPass = apiProxy;
-                proxyWebsockets = true;
+        virtualHosts =
+          {
+            ${cfg.apiDomain} = {
+              enableACME = cfg.tls.enable;
+              forceSSL = cfg.tls.enable;
+              locations = {
+                "/" = {
+                  proxyPass = apiProxy;
+                  proxyWebsockets = true;
+                };
               };
             };
-          };
 
-          ${cfg.appDomain} = {
-            root = cfg.frontendPackage;
-            enableACME = cfg.tls.enable;
-            forceSSL = cfg.tls.enable;
-            locations = {
-              "/" = {
-                extraConfig = ''
-                  try_files $uri $uri/ /index.html;
-                '';
+            ${cfg.appDomain} = {
+              root = cfg.frontendPackage;
+              enableACME = cfg.tls.enable;
+              forceSSL = cfg.tls.enable;
+              locations = {
+                "/" = {
+                  extraConfig = ''
+                    try_files $uri $uri/ /index.html;
+                  '';
+                };
+                "/api/" = {
+                  proxyPass = apiProxy;
+                  proxyWebsockets = true;
+                };
+                "/uploads/" = {
+                  proxyPass = apiProxy;
+                };
+                "/sitemap.xml" = {
+                  proxyPass = apiProxy;
+                };
+                "/.well-known/" = {
+                  proxyPass = apiProxy;
+                };
+                "/health" = {
+                  proxyPass = apiProxy;
+                };
+                "~ ^/(agora|clubs/|kunnat/|user/|aiheet)" = {
+                  extraConfig = ''
+                    if ($eulesia_og_bot) {
+                      proxy_pass ${apiProxy};
+                      break;
+                    }
+                    try_files $uri $uri/ /index.html;
+                  '';
+                };
               };
-              "/api/" = {
-                proxyPass = apiProxy;
-                proxyWebsockets = true;
-              };
-              "/uploads/" = {
-                proxyPass = apiProxy;
-              };
-              "/sitemap.xml" = {
-                proxyPass = apiProxy;
-              };
-              "/.well-known/" = {
-                proxyPass = apiProxy;
-              };
-              "/health" = {
-                proxyPass = apiProxy;
-              };
-              "~ ^/(agora|clubs/|kunnat/|user/|aiheet)" = {
-                extraConfig = ''
-                  if ($eulesia_og_bot) {
-                    proxy_pass ${apiProxy};
-                    break;
-                  }
-                  try_files $uri $uri/ /index.html;
-                '';
+            };
+          }
+          // optionalAttrs (cfg.adminDomain != null) {
+            ${cfg.adminDomain} = {
+              root = cfg.frontendPackage;
+              enableACME = cfg.tls.enable;
+              forceSSL = cfg.tls.enable;
+              locations = {
+                "= /" = {
+                  return = "302 https://${cfg.adminDomain}/admin";
+                };
+                "/" = {
+                  extraConfig = ''
+                    try_files $uri $uri/ /index.html;
+                  '';
+                };
+                "/api/" = {
+                  proxyPass = apiProxy;
+                  proxyWebsockets = true;
+                };
+                "/uploads/" = {
+                  proxyPass = apiProxy;
+                };
+                "/.well-known/" = {
+                  proxyPass = apiProxy;
+                };
+                "/health" = {
+                  proxyPass = apiProxy;
+                };
               };
             };
           };
-        };
       };
     };
 
