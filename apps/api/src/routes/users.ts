@@ -585,7 +585,9 @@ router.delete(
       .where(eq(conversationParticipants.userId, userId));
 
     // 5. Delete room content
-    await db.delete(roomCommentVotes).where(eq(roomCommentVotes.userId, userId));
+    await db
+      .delete(roomCommentVotes)
+      .where(eq(roomCommentVotes.userId, userId));
     await db.delete(roomThreadVotes).where(eq(roomThreadVotes.userId, userId));
     await db.delete(roomComments).where(eq(roomComments.authorId, userId));
     await db.delete(roomThreads).where(eq(roomThreads.authorId, userId));

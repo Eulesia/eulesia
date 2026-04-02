@@ -267,7 +267,6 @@ router.get("/link-preview", async (req: Request, res: Response) => {
     const MAX_SIZE = 1024 * 1024; // 1MB
     let totalSize = 0;
 
-    // eslint-disable-next-line no-constant-condition
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;

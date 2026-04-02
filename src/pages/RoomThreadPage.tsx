@@ -434,7 +434,8 @@ export function RoomThreadPage() {
                 onInput={(e) => {
                   const target = e.target as HTMLTextAreaElement;
                   target.style.height = "38px";
-                  target.style.height = Math.min(target.scrollHeight, 120) + "px";
+                  target.style.height =
+                    Math.min(target.scrollHeight, 120) + "px";
                 }}
               />
               {commentContent.trim() && (
@@ -443,9 +444,7 @@ export function RoomThreadPage() {
                   disabled={!commentContent.trim() || isSubmitting}
                   className="flex-shrink-0 bg-teal-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors disabled:opacity-50"
                 >
-                  {isSubmitting
-                    ? "..."
-                    : t("home:room.submitComment")}
+                  {isSubmitting ? "..." : t("home:room.submitComment")}
                 </button>
               )}
             </div>
@@ -501,7 +500,10 @@ export function RoomThreadPage() {
               {comments
                 .filter((c) => !c.parentId)
                 .map((comment) => (
-                  <div key={comment.id} className="relative group/comment px-4 py-3 bg-white dark:bg-gray-900">
+                  <div
+                    key={comment.id}
+                    className="relative group/comment px-4 py-3 bg-white dark:bg-gray-900"
+                  >
                     {(isRoomOwner || comment.authorId === currentUser?.id) && (
                       <button
                         onClick={() => setConfirmDeleteComment(comment.id)}

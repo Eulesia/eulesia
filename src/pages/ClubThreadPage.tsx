@@ -267,25 +267,46 @@ export function ClubThreadPage() {
                           {isModOrAdmin && (
                             <>
                               <button
-                                onClick={() => { handleToggleLock(); setShowModMenu(false); }}
+                                onClick={() => {
+                                  handleToggleLock();
+                                  setShowModMenu(false);
+                                }}
                                 disabled={updateThreadMutation.isPending}
                                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
                               >
-                                {thread.isLocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                                {thread.isLocked ? t("clubs:moderation.unlockThread") : t("clubs:moderation.lockThread")}
+                                {thread.isLocked ? (
+                                  <Unlock className="w-4 h-4" />
+                                ) : (
+                                  <Lock className="w-4 h-4" />
+                                )}
+                                {thread.isLocked
+                                  ? t("clubs:moderation.unlockThread")
+                                  : t("clubs:moderation.lockThread")}
                               </button>
                               <button
-                                onClick={() => { handleTogglePin(); setShowModMenu(false); }}
+                                onClick={() => {
+                                  handleTogglePin();
+                                  setShowModMenu(false);
+                                }}
                                 disabled={updateThreadMutation.isPending}
                                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
                               >
-                                {thread.isPinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
-                                {thread.isPinned ? t("clubs:moderation.unpinThread") : t("clubs:moderation.pinThread")}
+                                {thread.isPinned ? (
+                                  <PinOff className="w-4 h-4" />
+                                ) : (
+                                  <Pin className="w-4 h-4" />
+                                )}
+                                {thread.isPinned
+                                  ? t("clubs:moderation.unpinThread")
+                                  : t("clubs:moderation.pinThread")}
                               </button>
                             </>
                           )}
                           <button
-                            onClick={() => { setConfirmDeleteThread(true); setShowModMenu(false); }}
+                            onClick={() => {
+                              setConfirmDeleteThread(true);
+                              setShowModMenu(false);
+                            }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -412,7 +433,8 @@ export function ClubThreadPage() {
                 onInput={(e) => {
                   const target = e.target as HTMLTextAreaElement;
                   target.style.height = "38px";
-                  target.style.height = Math.min(target.scrollHeight, 120) + "px";
+                  target.style.height =
+                    Math.min(target.scrollHeight, 120) + "px";
                 }}
               />
               {commentContent.trim() && (
@@ -477,7 +499,10 @@ export function ClubThreadPage() {
               {comments
                 .filter((c) => !c.parentId)
                 .map((comment) => (
-                  <div key={comment.id} className="relative group/comment px-4 py-3 bg-white dark:bg-gray-900">
+                  <div
+                    key={comment.id}
+                    className="relative group/comment px-4 py-3 bg-white dark:bg-gray-900"
+                  >
                     {(isModOrAdmin || comment.authorId === currentUser?.id) && (
                       <button
                         onClick={() => setConfirmDeleteComment(comment.id)}

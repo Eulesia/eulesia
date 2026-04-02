@@ -1,13 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import {
-  ArrowLeft,
-  ChevronDown,
-  Pencil,
-  Trash2,
-  History,
-} from "lucide-react";
+import { ArrowLeft, ChevronDown, Pencil, Trash2, History } from "lucide-react";
 import { Layout } from "../components/layout";
 import { SEOHead } from "../components/SEOHead";
 import {
@@ -460,7 +454,8 @@ export function ThreadPage() {
                 onInput={(e) => {
                   const target = e.target as HTMLTextAreaElement;
                   target.style.height = "38px";
-                  target.style.height = Math.min(target.scrollHeight, 120) + "px";
+                  target.style.height =
+                    Math.min(target.scrollHeight, 120) + "px";
                 }}
               />
               {commentContent.trim() && (

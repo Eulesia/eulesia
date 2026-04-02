@@ -14,10 +14,7 @@ import { App as CapApp } from "@capacitor/app";
 import { useAuth } from "./useAuth";
 import { queryKeys } from "./useApi";
 import { API_BASE_URL } from "../lib/runtimeConfig";
-import type {
-  DirectMessage,
-  ConversationWithMessages,
-} from "../lib/api";
+import type { DirectMessage, ConversationWithMessages } from "../lib/api";
 
 const TYPING_TIMEOUT_MS = 3000;
 const TYPING_THROTTLE_MS = 2000;

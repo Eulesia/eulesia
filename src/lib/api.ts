@@ -1454,10 +1454,9 @@ export interface AlgorithmDocumentation {
   }[];
 }
 
-export interface BookmarksResponse
-  extends PaginatedResponse<
-    Thread & { isBookmarked: true; bookmarkedAt: string }
-  > {}
+export type BookmarksResponse = PaginatedResponse<
+  Thread & { isBookmarked: true; bookmarkedAt: string }
+>;
 
 export interface Comment {
   id: string;
@@ -1579,7 +1578,7 @@ export interface ClubThreadWithComments extends ClubThread {
   comments: ClubComment[];
 }
 
-export interface ClubComment extends Comment {}
+export type ClubComment = Comment;
 
 // Home types
 export interface Room {

@@ -448,7 +448,7 @@ router.get(
       .limit(50);
 
     // Get user's votes on threads
-    let threadVoteMap = new Map<string, number>();
+    const threadVoteMap = new Map<string, number>();
     if (req.user && threadList.length > 0) {
       const threadIds = threadList.map((t) => t.thread.id);
       const votes = await db
@@ -1095,7 +1095,7 @@ router.get(
       .orderBy(clubComments.createdAt);
 
     // Get user's votes on comments
-    let commentVoteMap = new Map<string, number>();
+    const commentVoteMap = new Map<string, number>();
     if (req.user && commentList.length > 0) {
       const commentIds = commentList.map((c) => c.comment.id);
       const votes = await db

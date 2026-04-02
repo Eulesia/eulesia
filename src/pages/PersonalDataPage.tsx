@@ -107,8 +107,7 @@ export function PersonalDataPage() {
           icon: <MessageSquare className="w-4 h-4" />,
           label: t("personalData.roomThreads"),
           count:
-            (data.roomThreads?.length ?? 0) +
-            (data.roomComments?.length ?? 0),
+            (data.roomThreads?.length ?? 0) + (data.roomComments?.length ?? 0),
         },
         {
           icon: <Bell className="w-4 h-4" />,

@@ -289,7 +289,7 @@ router.get(
       .limit(50);
 
     // Get user's votes on threads
-    let threadVoteMap = new Map<string, number>();
+    const threadVoteMap = new Map<string, number>();
     if (currentUserId && threadList.length > 0) {
       const threadIds = threadList.map((t) => t.thread.id);
       const votes = await db
@@ -529,9 +529,7 @@ router.get(
       })
       .from(roomThreads)
       .leftJoin(users, eq(roomThreads.authorId, users.id))
-      .where(
-        and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)),
-      )
+      .where(and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)))
       .limit(1);
 
     if (!threadData) {
@@ -572,7 +570,7 @@ router.get(
       .orderBy(roomComments.createdAt);
 
     // Get user's votes on comments
-    let commentVoteMap = new Map<string, number>();
+    const commentVoteMap = new Map<string, number>();
     if (currentUserId && commentList.length > 0) {
       const commentIds = commentList.map((c) => c.comment.id);
       const votes = await db
@@ -648,9 +646,7 @@ router.post(
     const [thread] = await db
       .select()
       .from(roomThreads)
-      .where(
-        and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)),
-      )
+      .where(and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)))
       .limit(1);
 
     if (!thread) {
@@ -743,9 +739,7 @@ router.post(
     const [thread] = await db
       .select()
       .from(roomThreads)
-      .where(
-        and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)),
-      )
+      .where(and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)))
       .limit(1);
 
     if (!thread) {
@@ -902,9 +896,7 @@ router.delete(
     const [thread] = await db
       .select()
       .from(roomThreads)
-      .where(
-        and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)),
-      )
+      .where(and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)))
       .limit(1);
 
     if (!thread) {
@@ -964,9 +956,7 @@ router.patch(
     const [thread] = await db
       .select()
       .from(roomThreads)
-      .where(
-        and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)),
-      )
+      .where(and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)))
       .limit(1);
 
     if (!thread) {
@@ -998,9 +988,7 @@ router.delete(
     const [thread] = await db
       .select()
       .from(roomThreads)
-      .where(
-        and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)),
-      )
+      .where(and(eq(roomThreads.id, threadId), eq(roomThreads.roomId, roomId)))
       .limit(1);
 
     if (!thread) {
@@ -1298,7 +1286,7 @@ router.get(
 
     // Get rooms (public ones, or all if viewing own home)
 
-    let roomsQuery = db
+    const roomsQuery = db
       .select({
         room: rooms,
         threadCount: sql<number>`(SELECT count(*)::int FROM room_threads WHERE room_id = ${rooms.id})`,

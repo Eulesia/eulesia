@@ -1411,21 +1411,18 @@ export const roomMembersRelations = relations(roomMembers, ({ one }) => ({
   }),
 }));
 
-export const roomThreadsRelations = relations(
-  roomThreads,
-  ({ one, many }) => ({
-    room: one(rooms, {
-      fields: [roomThreads.roomId],
-      references: [rooms.id],
-    }),
-    author: one(users, {
-      fields: [roomThreads.authorId],
-      references: [users.id],
-    }),
-    comments: many(roomComments),
-    votes: many(roomThreadVotes),
+export const roomThreadsRelations = relations(roomThreads, ({ one, many }) => ({
+  room: one(rooms, {
+    fields: [roomThreads.roomId],
+    references: [rooms.id],
   }),
-);
+  author: one(users, {
+    fields: [roomThreads.authorId],
+    references: [users.id],
+  }),
+  comments: many(roomComments),
+  votes: many(roomThreadVotes),
+}));
 
 export const roomCommentsRelations = relations(roomComments, ({ one }) => ({
   thread: one(roomThreads, {

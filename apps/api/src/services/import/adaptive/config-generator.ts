@@ -218,7 +218,7 @@ export async function testConfig(
   try {
     // Resolve the meeting list URL
     const origin = new URL(baseUrl).origin;
-    let listUrl = config.meetingList.url
+    const listUrl = config.meetingList.url
       .replace("{baseUrl}", baseUrl)
       .replace("{origin}", origin);
 

@@ -42,6 +42,21 @@ _: {
       }
     '';
 
+    formatRepo = pkgs.writeShellApplication {
+      name = "format-repo";
+      runtimeInputs = [config.treefmt.build.wrapper];
+      text = ''
+        set -euo pipefail
+        ${shellFunctions}
+        HOME="$(mktemp -d)"
+        export HOME
+        XDG_CACHE_HOME="$HOME/.cache"
+        export XDG_CACHE_HOME
+        mkdir -p "$XDG_CACHE_HOME"
+        treefmt
+      '';
+    };
+
     checkFormat = pkgs.writeShellApplication {
       name = "check-format";
       runtimeInputs = [config.treefmt.build.wrapper];
@@ -82,6 +97,7 @@ _: {
         set -euo pipefail
         ${shellFunctions}
         ensure_dependencies
+        npm run lint:web:fix
         npm run lint:web
         npm run typecheck:web
       '';
@@ -100,6 +116,7 @@ _: {
         set -euo pipefail
         ${shellFunctions}
         ensure_dependencies
+        npm run lint:api:fix
         npm run lint:api
         npm run typecheck:api
       '';
@@ -179,8 +196,8 @@ _: {
         treefmt = {
           enable = true;
           name = "treefmt";
-          description = "Run treefmt format checks";
-          entry = "${checkFormat}/bin/check-format";
+          description = "Run treefmt in write mode";
+          entry = "${formatRepo}/bin/format-repo";
           language = "system";
           pass_filenames = false;
         };
@@ -215,6 +232,7 @@ _: {
     };
 
     packages = {
+      format-repo = formatRepo;
       check-format = checkFormat;
       lint-nix = lintNix;
       lint-frontend = lintFrontend;
@@ -226,6 +244,11 @@ _: {
     };
 
     apps = {
+      format = {
+        type = "app";
+        program = "${formatRepo}/bin/format-repo";
+        meta.description = "Format the repository with treefmt";
+      };
       check-format = {
         type = "app";
         program = "${checkFormat}/bin/check-format";

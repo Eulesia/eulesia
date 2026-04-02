@@ -334,13 +334,8 @@ export function useVoteRoomComment(roomId: string, threadId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      commentId,
-      value,
-    }: {
-      commentId: string;
-      value: number;
-    }) => api.voteRoomComment(roomId, threadId, commentId, value),
+    mutationFn: ({ commentId, value }: { commentId: string; value: number }) =>
+      api.voteRoomComment(roomId, threadId, commentId, value),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.roomThread(roomId, threadId),

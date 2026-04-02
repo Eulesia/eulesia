@@ -35,9 +35,12 @@ import type {
 } from "../lib/api";
 import { transformAuthor } from "../utils/transforms";
 
+const DAILY_SUBTITLE_INDEX = Math.floor(Date.now() / 86400000) % 5;
+
 // Transform API thread to component format
 function transformThread(thread: ApiThread | ExploreThread) {
   const exploreThread = thread as ExploreThread;
+  const bookmarkableThread = thread as ApiThread & { isBookmarked?: boolean };
   return {
     id: thread.id,
     title: thread.title,
@@ -62,7 +65,7 @@ function transformThread(thread: ApiThread | ExploreThread) {
     // CVS score (only present in explore feed)
     cvsScore: exploreThread.cvsScore,
     scoreBreakdown: exploreThread.scoreBreakdown,
-    isBookmarked: (thread as any).isBookmarked,
+    isBookmarked: bookmarkableThread.isBookmarked,
   };
 }
 
@@ -114,9 +117,11 @@ export function AgoraPage() {
 
   // Reset pagination when filters change
   useEffect(() => {
+    // Filter changes intentionally restart pagination from page one.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(1);
     setAllThreads([]);
-  }, [feedScope, sortBy, topPeriod, selectedMunicipality, selectedTags]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [feedScope, sortBy, topPeriod, selectedMunicipality, selectedTags]);
 
   // Determine if user has subscriptions
   const hasSubscriptions = useMemo(() => {
@@ -129,6 +134,7 @@ export function AgoraPage() {
     if (feedScopeInitialized) return;
     if (!currentUser) {
       // Unauthenticated: always show 'all' feed
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFeedScope("all");
       setFeedScopeInitialized(true);
       return;
@@ -168,6 +174,7 @@ export function AgoraPage() {
       author: transformAuthor(item.author),
     }));
     if (page === 1) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAllThreads(newItems);
     } else {
       setAllThreads((prev) => {
@@ -176,7 +183,7 @@ export function AgoraPage() {
         return [...prev, ...unique];
       });
     }
-  }, [threadsData, page]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [threadsData, page]);
 
   const threads = allThreads;
 
@@ -259,7 +266,7 @@ export function AgoraPage() {
   useEffect(() => {
     sessionStorage.removeItem(SCROLL_KEY);
     scrollRestored.current = false;
-  }, [feedScope, sortBy, topPeriod, selectedMunicipality, selectedTags]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [feedScope, sortBy, topPeriod, selectedMunicipality, selectedTags]);
 
   const handleThreadCreated = (threadId: string) => {
     navigate(`/agora/thread/${threadId}`);
@@ -311,7 +318,7 @@ export function AgoraPage() {
               {t("title")}
             </h1>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              {t(`subtitle_${Math.floor(Date.now() / 86400000) % 5}`, {
+              {t(`subtitle_${DAILY_SUBTITLE_INDEX}`, {
                 defaultValue: t("subtitle"),
               })}
             </p>

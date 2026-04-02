@@ -37,7 +37,13 @@ import {
   useDeleteAccount,
 } from "../hooks/useApi";
 import { guides } from "../data/guides";
-import { api } from "../lib/api";
+import { api, type User } from "../lib/api";
+
+type CapacitorWindow = Window & {
+  Capacitor?: {
+    isNativePlatform?: () => boolean;
+  };
+};
 
 export function ProfilePage() {
   const { t } = useTranslation(["profile", "common", "auth"]);
@@ -70,6 +76,7 @@ export function ProfilePage() {
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const { startGuide, hasCompletedGuide, resetAllGuides } = useGuide();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const [notificationSettings, setNotificationSettings] = useState({
     replies: currentUser?.settings?.notificationReplies ?? true,
@@ -82,10 +89,11 @@ export function ProfilePage() {
   const [pushSupported, setPushSupported] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
 
-  const isNative =
-    typeof window !== "undefined" &&
-    "Capacitor" in window &&
-    (window as any).Capacitor?.isNativePlatform?.();
+  const capacitor =
+    typeof window !== "undefined"
+      ? (window as CapacitorWindow).Capacitor
+      : undefined;
+  const isNative = !!capacitor?.isNativePlatform?.();
 
   const checkPushStatus = useCallback(async () => {
     if (isNative) {
@@ -117,6 +125,12 @@ export function ProfilePage() {
   useEffect(() => {
     checkPushStatus();
   }, [checkPushStatus]);
+
+  useEffect(() => {
+    if (editingName) {
+      nameInputRef.current?.focus();
+    }
+  }, [editingName]);
 
   const handlePushToggle = async () => {
     setPushLoading(true);
@@ -221,6 +235,16 @@ export function ProfilePage() {
     } catch (err) {
       console.error("Failed to export data:", err);
     }
+  };
+
+  const handleSaveDisplayName = () => {
+    const profileUpdate: Partial<User> = { name: nameInput };
+    updateProfileMutation.mutate(profileUpdate, {
+      onSuccess: () => {
+        void refreshUser();
+        setEditingName(false);
+      },
+    });
   };
 
   const handlePasswordFieldChange = (
@@ -452,19 +476,14 @@ export function ProfilePage() {
             {editingName ? (
               <div className="flex items-center gap-2">
                 <input
+                  ref={nameInputRef}
                   type="text"
                   value={nameInput}
                   onChange={(e) => setNameInput(e.target.value)}
                   className="text-lg font-bold px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  autoFocus
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      updateProfileMutation.mutate({ name: nameInput } as any, {
-                        onSuccess: () => {
-                          refreshUser();
-                          setEditingName(false);
-                        },
-                      });
+                      handleSaveDisplayName();
                     }
                     if (e.key === "Escape") {
                       setNameInput(currentUser.name);
@@ -473,14 +492,7 @@ export function ProfilePage() {
                   }}
                 />
                 <button
-                  onClick={() => {
-                    updateProfileMutation.mutate({ name: nameInput } as any, {
-                      onSuccess: () => {
-                        refreshUser();
-                        setEditingName(false);
-                      },
-                    });
-                  }}
+                  onClick={handleSaveDisplayName}
                   className="text-xs px-2 py-1 bg-blue-600 text-white rounded-lg"
                 >
                   {t("common:actions.save", { defaultValue: "Tallenna" })}

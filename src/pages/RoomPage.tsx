@@ -196,8 +196,16 @@ export function RoomPage() {
     );
   }
 
-  const { owner, members, threads, isOwner, canPost, visibility, name, description } =
-    roomData;
+  const {
+    owner,
+    members,
+    threads,
+    isOwner,
+    canPost,
+    visibility,
+    name,
+    description,
+  } = roomData;
 
   const pinnedThread = threads.find((t: RoomThread) => t.isPinned);
   const regularThreads = threads.filter((t: RoomThread) => !t.isPinned);
@@ -254,7 +262,9 @@ export function RoomPage() {
               {visibility === "private" && (
                 <div className="flex items-center gap-1">
                   <Users className="w-3.5 h-3.5" />
-                  <span>{t("rooms.members", { count: members.length + 1 })}</span>
+                  <span>
+                    {t("rooms.members", { count: members.length + 1 })}
+                  </span>
                 </div>
               )}
             </div>
@@ -289,7 +299,9 @@ export function RoomPage() {
           <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 overflow-hidden">
             <div className="px-4 py-2 bg-amber-100 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800 flex items-center gap-2 text-amber-800 dark:text-amber-300">
               <Pin className="w-4 h-4" />
-              <span className="text-sm font-medium">{t("room.pinnedThread")}</span>
+              <span className="text-sm font-medium">
+                {t("room.pinnedThread")}
+              </span>
             </div>
             <Link
               to={`/home/room/${roomId}/thread/${pinnedThread.id}`}
@@ -303,7 +315,9 @@ export function RoomPage() {
                 {pinnedThread.content.length > 150 && "..."}
               </p>
               <div className="mt-2 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                <span>{t("room.replies", { count: pinnedThread.replyCount })}</span>
+                <span>
+                  {t("room.replies", { count: pinnedThread.replyCount })}
+                </span>
                 <span>&middot;</span>
                 <span>{formatRelativeTime(pinnedThread.updatedAt)}</span>
               </div>
@@ -398,7 +412,10 @@ export function RoomPage() {
                   </p>
                   <div className="flex items-center justify-between">
                     {thread.author && (
-                      <ActorBadge user={transformUser(thread.author)} size="sm" />
+                      <ActorBadge
+                        user={transformUser(thread.author)}
+                        size="sm"
+                      />
                     )}
                     <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
                       {(thread.score ?? 0) !== 0 && (
