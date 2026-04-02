@@ -3,12 +3,11 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { eq, and, count, desc } from "drizzle-orm";
 import { db, waitlist, inviteCodes, users } from "../db/index.js";
-import { authMiddleware } from "../middleware/auth.js";
-import { requireAdmin } from "../middleware/admin.js";
+import { adminAuthMiddleware } from "../middleware/adminAuth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { emailService } from "../services/email.js";
 import { randomBytes } from "crypto";
-import type { AuthenticatedRequest } from "../types/index.js";
+import type { AdminAuthenticatedRequest } from "../types/index.js";
 
 const router = Router();
 
@@ -92,9 +91,8 @@ router.post(
 // GET /waitlist/admin/stats — Dashboard stats
 router.get(
   "/admin/stats",
-  authMiddleware,
-  requireAdmin,
-  asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {
+  adminAuthMiddleware,
+  asyncHandler(async (_req: AdminAuthenticatedRequest, res: Response) => {
     const [pending] = await db
       .select({ count: count() })
       .from(waitlist)
@@ -124,9 +122,8 @@ router.get(
 // GET /waitlist/admin — List waitlist entries (paginated, filterable)
 router.get(
   "/admin",
-  authMiddleware,
-  requireAdmin,
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  adminAuthMiddleware,
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { page = "1", limit = "20", status } = req.query;
     const pageNum = Math.max(1, parseInt(page as string) || 1);
     const limitNum = Math.min(
@@ -186,11 +183,10 @@ router.get(
 // POST /waitlist/admin/:id/approve — Approve entry, generate invite code, send email
 router.post(
   "/admin/:id/approve",
-  authMiddleware,
-  requireAdmin,
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  adminAuthMiddleware,
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
-    const adminId = req.user!.id;
+    const adminId = req.admin!.id;
 
     const [entry] = await db
       .select()
@@ -269,9 +265,8 @@ router.post(
 // POST /waitlist/admin/:id/reject — Reject entry
 router.post(
   "/admin/:id/reject",
-  authMiddleware,
-  requireAdmin,
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  adminAuthMiddleware,
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
     const { note } = z
       .object({ note: z.string().max(1000).optional() })
@@ -299,7 +294,7 @@ router.post(
       .update(waitlist)
       .set({
         status: "rejected",
-        rejectedBy: req.user!.id,
+        rejectedBy: req.admin!.id,
         rejectedAt: new Date(),
         note: note || null,
       })
@@ -312,13 +307,12 @@ router.post(
 // POST /waitlist/admin/bulk-approve — Bulk approve entries
 router.post(
   "/admin/bulk-approve",
-  authMiddleware,
-  requireAdmin,
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  adminAuthMiddleware,
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { ids } = z
       .object({ ids: z.array(z.string().uuid()).min(1).max(50) })
       .parse(req.body);
-    const adminId = req.user!.id;
+    const adminId = req.admin!.id;
 
     const results: { id: string; code: string; emailSent: boolean }[] = [];
 

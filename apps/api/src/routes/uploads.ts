@@ -16,7 +16,6 @@ import {
 } from "../services/uploads.js";
 import { authMiddleware } from "../middleware/auth.js";
 import type { AuthenticatedRequest } from "../types/index.js";
-import { isSopsManagedOperatorAccount } from "../utils/operatorAccounts.js";
 
 const router = Router();
 
@@ -55,12 +54,6 @@ router.post(
 
       if (!req.file) {
         return res.status(400).json({ error: "No file provided" });
-      }
-
-      if (isSopsManagedOperatorAccount(user)) {
-        return res.status(403).json({
-          error: "Bootstrap-managed admin accounts cannot change avatars",
-        });
       }
 
       // Process and save avatar
@@ -143,12 +136,6 @@ router.delete("/avatar", authMiddleware, async (req, res) => {
 
     if (!user) {
       return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (isSopsManagedOperatorAccount(user)) {
-      return res.status(403).json({
-        error: "Bootstrap-managed admin accounts cannot change avatars",
-      });
     }
 
     // Get current avatar URL

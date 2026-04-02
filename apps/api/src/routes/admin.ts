@@ -16,27 +16,25 @@ import {
   siteSettings,
   inviteCodes,
   systemAnnouncements,
+  adminAccounts,
 } from "../db/index.js";
 import { randomBytes } from "crypto";
-import { authMiddleware } from "../middleware/auth.js";
-import { requireAdmin } from "../middleware/admin.js";
+import { adminAuthMiddleware } from "../middleware/adminAuth.js";
 import { AppError } from "../middleware/errorHandler.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { notify } from "../services/notify.js";
-import type { AuthenticatedRequest } from "../types/index.js";
-import { isSopsManagedOperatorAccount } from "../utils/operatorAccounts.js";
+import type { AdminAuthenticatedRequest } from "../types/index.js";
 
 const router = Router();
 
-// All admin routes require auth + admin role
-router.use(authMiddleware);
-router.use(requireAdmin);
+// All admin routes require admin auth
+router.use(adminAuthMiddleware);
 
 // ─── Dashboard ──────────────────────────────────────────────
 
 router.get(
   "/dashboard",
-  asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (_req: AdminAuthenticatedRequest, res: Response) => {
     const [userCount] = await db.select({ count: count() }).from(users);
     const [threadCount] = await db.select({ count: count() }).from(threads);
     const [clubCount] = await db.select({ count: count() }).from(clubs);
@@ -72,10 +70,13 @@ router.get(
         targetType: moderationActions.targetType,
         reason: moderationActions.reason,
         createdAt: moderationActions.createdAt,
-        adminName: users.name,
+        adminName: adminAccounts.name,
       })
       .from(moderationActions)
-      .leftJoin(users, eq(moderationActions.adminUserId, users.id))
+      .leftJoin(
+        adminAccounts,
+        eq(moderationActions.adminUserId, adminAccounts.id),
+      )
       .orderBy(desc(moderationActions.createdAt))
       .limit(10);
 
@@ -100,7 +101,7 @@ router.get(
 
 router.get(
   "/users",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { page = "1", limit = "20", search, role } = req.query;
     const pageNum = Math.max(1, parseInt(page as string));
     const limitNum = Math.min(50, Math.max(1, parseInt(limit as string)));
@@ -137,7 +138,6 @@ router.get(
         name: users.name,
         avatarUrl: users.avatarUrl,
         role: users.role,
-        managedBy: users.managedBy,
         institutionType: users.institutionType,
         institutionName: users.institutionName,
         identityVerified: users.identityVerified,
@@ -165,7 +165,7 @@ router.get(
 
 router.get(
   "/users/:id",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
 
     const [user] = await db
@@ -192,13 +192,12 @@ router.get(
       .from(comments)
       .where(eq(comments.authorId, id));
 
-    const { passwordHash: _, managedKey: _mk, ...safeUser } = user;
+    const { passwordHash: _, ...safeUser } = user;
 
     res.json({
       success: true,
       data: {
         ...safeUser,
-        isManagedAccount: isSopsManagedOperatorAccount(user),
         sanctions,
         threadCount: threadCount.count,
         commentCount: commentCount.count,
@@ -214,7 +213,7 @@ const changeRoleSchema = z.object({
 
 router.patch(
   "/users/:id/role",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
     const { role } = changeRoleSchema.parse(req.body);
 
@@ -224,19 +223,13 @@ router.patch(
       .where(eq(users.id, id))
       .limit(1);
     if (!user) throw new AppError(404, "User not found");
-    if (isSopsManagedOperatorAccount(user)) {
-      throw new AppError(
-        400,
-        "Bootstrap-managed admin accounts must be changed through SOPS/Nix",
-      );
-    }
 
     const oldRole = user.role;
     await db.update(users).set({ role }).where(eq(users.id, id));
 
     // Log action
     await db.insert(moderationActions).values({
-      adminUserId: req.user!.id,
+      adminUserId: req.admin!.id,
       actionType: "role_changed",
       targetType: "user",
       targetId: id,
@@ -251,7 +244,7 @@ router.patch(
 // PATCH /admin/users/:id/verify
 router.patch(
   "/users/:id/verify",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
     const { verified } = z.object({ verified: z.boolean() }).parse(req.body);
 
@@ -261,12 +254,6 @@ router.patch(
       .where(eq(users.id, id))
       .limit(1);
     if (!user) throw new AppError(404, "User not found");
-    if (isSopsManagedOperatorAccount(user)) {
-      throw new AppError(
-        400,
-        "Bootstrap-managed admin accounts cannot be identity-verified in-app",
-      );
-    }
 
     await db
       .update(users)
@@ -275,7 +262,7 @@ router.patch(
 
     // Log action
     await db.insert(moderationActions).values({
-      adminUserId: req.user!.id,
+      adminUserId: req.admin!.id,
       actionType: verified ? "user_verified" : "user_unverified",
       targetType: "user",
       targetId: id,
@@ -299,7 +286,7 @@ const issueSanctionSchema = z.object({
 
 router.post(
   "/users/:id/sanction",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
     const { sanctionType, reason, expiresAt } = issueSanctionSchema.parse(
       req.body,
@@ -321,7 +308,7 @@ router.post(
         userId: id,
         sanctionType,
         reason,
-        issuedBy: req.user!.id,
+        issuedBy: req.admin!.id,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
       })
       .returning();
@@ -335,7 +322,7 @@ router.post(
           : "user_banned";
 
     await db.insert(moderationActions).values({
-      adminUserId: req.user!.id,
+      adminUserId: req.admin!.id,
       actionType,
       targetType: "user",
       targetId: id,
@@ -363,7 +350,7 @@ router.post(
 
 router.get(
   "/users/:id/sanctions",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
     const sanctions = await db
       .select({
@@ -373,10 +360,10 @@ router.get(
         issuedAt: userSanctions.issuedAt,
         expiresAt: userSanctions.expiresAt,
         revokedAt: userSanctions.revokedAt,
-        issuerName: users.name,
+        issuerName: adminAccounts.name,
       })
       .from(userSanctions)
-      .leftJoin(users, eq(userSanctions.issuedBy, users.id))
+      .leftJoin(adminAccounts, eq(userSanctions.issuedBy, adminAccounts.id))
       .where(eq(userSanctions.userId, id))
       .orderBy(desc(userSanctions.issuedAt));
 
@@ -386,7 +373,7 @@ router.get(
 
 router.delete(
   "/sanctions/:id",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
 
     const [sanction] = await db
@@ -400,13 +387,13 @@ router.delete(
       .update(userSanctions)
       .set({
         revokedAt: new Date(),
-        revokedBy: req.user!.id,
+        revokedBy: req.admin!.id,
       })
       .where(eq(userSanctions.id, id));
 
     // Log action
     await db.insert(moderationActions).values({
-      adminUserId: req.user!.id,
+      adminUserId: req.admin!.id,
       actionType: "user_unbanned",
       targetType: "user",
       targetId: sanction.userId,
@@ -431,7 +418,7 @@ router.delete(
 
 router.get(
   "/reports",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { page = "1", limit = "20", status, reason, contentType } = req.query;
     const pageNum = Math.max(1, parseInt(page as string));
     const limitNum = Math.min(50, Math.max(1, parseInt(limit as string)));
@@ -500,7 +487,7 @@ router.get(
 
 router.get(
   "/reports/:id",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
 
     const [report] = await db
@@ -599,7 +586,7 @@ const updateReportSchema = z.object({
 
 router.patch(
   "/reports/:id",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
     const { status, reason } = updateReportSchema.parse(req.body);
 
@@ -615,7 +602,7 @@ router.patch(
       updates.resolvedAt = new Date();
     }
     if (status === "reviewing") {
-      updates.assignedTo = req.user!.id;
+      updates.assignedTo = req.admin!.id;
     }
 
     await db
@@ -628,7 +615,7 @@ router.patch(
       status === "dismissed" ? "report_dismissed" : "report_resolved";
     if (status === "resolved" || status === "dismissed") {
       await db.insert(moderationActions).values({
-        adminUserId: req.user!.id,
+        adminUserId: req.admin!.id,
         actionType,
         targetType: report.contentType,
         targetId: report.contentId,
@@ -645,7 +632,7 @@ router.patch(
 
 router.delete(
   "/content/:type/:id",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { type, id } = req.params;
     const { reason } = req.body || {};
 
@@ -679,7 +666,7 @@ router.delete(
     }
 
     await db.insert(moderationActions).values({
-      adminUserId: req.user!.id,
+      adminUserId: req.admin!.id,
       actionType: "content_removed",
       targetType: type as any,
       targetId: id,
@@ -692,7 +679,7 @@ router.delete(
 
 router.post(
   "/content/:type/:id/restore",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { type, id } = req.params;
 
     switch (type) {
@@ -725,7 +712,7 @@ router.post(
     }
 
     await db.insert(moderationActions).values({
-      adminUserId: req.user!.id,
+      adminUserId: req.admin!.id,
       actionType: "content_restored",
       targetType: type as any,
       targetId: id,
@@ -740,7 +727,7 @@ router.post(
 
 router.get(
   "/modlog",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { page = "1", limit = "30", actionType, adminId } = req.query;
     const pageNum = Math.max(1, parseInt(page as string));
     const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
@@ -770,11 +757,14 @@ router.get(
         reason: moderationActions.reason,
         metadata: moderationActions.metadata,
         createdAt: moderationActions.createdAt,
-        adminName: users.name,
+        adminName: adminAccounts.name,
         adminUserId: moderationActions.adminUserId,
       })
       .from(moderationActions)
-      .leftJoin(users, eq(moderationActions.adminUserId, users.id))
+      .leftJoin(
+        adminAccounts,
+        eq(moderationActions.adminUserId, adminAccounts.id),
+      )
       .where(whereClause)
       .orderBy(desc(moderationActions.createdAt))
       .limit(limitNum)
@@ -797,7 +787,7 @@ router.get(
 
 router.get(
   "/transparency",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { from, to } = req.query;
     const fromDate = from
       ? new Date(from as string)
@@ -916,7 +906,7 @@ router.get(
 
 router.get(
   "/appeals",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { page = "1", limit = "20", status } = req.query;
     const pageNum = Math.max(1, parseInt(page as string));
     const limitNum = Math.min(50, Math.max(1, parseInt(limit as string)));
@@ -977,7 +967,7 @@ const resolveAppealSchema = z.object({
 
 router.patch(
   "/appeals/:id",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
     const { status, adminResponse } = resolveAppealSchema.parse(req.body);
 
@@ -993,7 +983,7 @@ router.patch(
       .set({
         status,
         adminResponse,
-        respondedBy: req.user!.id,
+        respondedBy: req.admin!.id,
         respondedAt: new Date(),
       })
       .where(eq(moderationAppeals.id, id));
@@ -1004,7 +994,7 @@ router.patch(
         .update(userSanctions)
         .set({
           revokedAt: new Date(),
-          revokedBy: req.user!.id,
+          revokedBy: req.admin!.id,
         })
         .where(eq(userSanctions.id, appeal.sanctionId));
     }
@@ -1052,7 +1042,7 @@ router.get(
 // PATCH /admin/settings - Update site settings
 router.patch(
   "/settings",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const schema = z.object({
       registrationOpen: z.boolean().optional(),
     });
@@ -1077,7 +1067,7 @@ router.patch(
     }
 
     await db.insert(moderationActions).values({
-      adminUserId: req.user!.id,
+      adminUserId: req.admin!.id,
       actionType: "settings_changed",
       targetType: "system",
       targetId: "site_settings",
@@ -1092,7 +1082,7 @@ router.patch(
 // PATCH /admin/users/:id/invites - Set invite count for a user
 router.patch(
   "/users/:id/invites",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
     const { count: newCount } = z
       .object({ count: z.number().int().min(0).max(100) })
@@ -1111,7 +1101,7 @@ router.patch(
       .where(eq(users.id, id));
 
     await db.insert(moderationActions).values({
-      adminUserId: req.user!.id,
+      adminUserId: req.admin!.id,
       actionType: "invite_count_changed",
       targetType: "user",
       targetId: id,
@@ -1136,11 +1126,11 @@ function generateInviteCode(): string {
 // POST /admin/invites/generate - Generate invite codes (admin, no limit)
 router.post(
   "/invites/generate",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { count: codeCount } = z
       .object({ count: z.number().int().min(1).max(50) })
       .parse(req.body);
-    const adminId = req.user!.id;
+    const adminId = req.admin!.id;
 
     const generatedCodes: { id: string; code: string; createdAt: Date }[] = [];
 
@@ -1194,10 +1184,10 @@ router.post(
 // GET /admin/invites - List all admin-generated invite codes
 router.get(
   "/invites",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { status } = req.query;
 
-    const conditions = [eq(inviteCodes.createdBy, req.user!.id)];
+    const conditions = [eq(inviteCodes.createdBy, req.admin!.id)];
     if (status && ["available", "used", "revoked"].includes(status as string)) {
       conditions.push(eq(inviteCodes.status, status as any));
     }
@@ -1236,7 +1226,7 @@ router.get(
 // POST /admin/announcements - Create system announcement
 router.post(
   "/announcements",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const schema = z.object({
       title: z.string().min(1).max(200),
       message: z.string().min(1).max(2000),
@@ -1251,13 +1241,13 @@ router.post(
         title: data.title,
         message: data.message,
         type: data.type,
-        createdBy: req.user!.id,
+        createdBy: req.admin!.id,
         expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
       })
       .returning();
 
     await db.insert(moderationActions).values({
-      adminUserId: req.user!.id,
+      adminUserId: req.admin!.id,
       actionType: "settings_changed",
       targetType: "system",
       targetId: announcement.id,
@@ -1272,7 +1262,7 @@ router.post(
 // GET /admin/announcements - List all announcements
 router.get(
   "/announcements",
-  asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (_req: AdminAuthenticatedRequest, res: Response) => {
     const announcements = await db
       .select({
         id: systemAnnouncements.id,
@@ -1282,10 +1272,13 @@ router.get(
         active: systemAnnouncements.active,
         createdAt: systemAnnouncements.createdAt,
         expiresAt: systemAnnouncements.expiresAt,
-        createdByName: users.name,
+        createdByName: adminAccounts.name,
       })
       .from(systemAnnouncements)
-      .leftJoin(users, eq(systemAnnouncements.createdBy, users.id))
+      .leftJoin(
+        adminAccounts,
+        eq(systemAnnouncements.createdBy, adminAccounts.id),
+      )
       .orderBy(desc(systemAnnouncements.createdAt))
       .limit(50);
 
@@ -1296,7 +1289,7 @@ router.get(
 // PATCH /admin/announcements/:id - Toggle announcement active status
 router.patch(
   "/announcements/:id",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
     const { active } = z.object({ active: z.boolean() }).parse(req.body);
 
@@ -1319,7 +1312,7 @@ router.patch(
 // DELETE /admin/announcements/:id - Delete announcement
 router.delete(
   "/announcements/:id",
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: AdminAuthenticatedRequest, res: Response) => {
     const { id } = req.params;
 
     const [existing] = await db

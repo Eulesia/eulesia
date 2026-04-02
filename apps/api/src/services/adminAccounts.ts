@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { SOPS_ADMIN_ACCOUNT_MANAGER } from "../utils/operatorAccounts.js";
+
+const SOPS_ADMIN_ACCOUNT_MANAGER = "sops_admin";
 
 export const bootstrapAdminAccountSchema = z.object({
   managedKey: z

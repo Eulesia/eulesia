@@ -19,11 +19,6 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { notify } from "../services/notify.js";
 import { indexClub } from "../services/search/index.js";
 import type { AuthenticatedRequest } from "../types/index.js";
-import {
-  formatUserSummaryForResponse as formatClubUserSummary,
-  getPublicUserId,
-  sanitizePublicUserSummary,
-} from "../utils/operatorAccounts.js";
 
 const router = Router();
 
@@ -162,7 +157,6 @@ router.get(
           id: users.id,
           name: users.name,
           avatarUrl: users.avatarUrl,
-          managedBy: users.managedBy,
         },
       })
       .from(clubs)
@@ -183,7 +177,7 @@ router.get(
       data: {
         items: clubList.map(({ club, creator }) => ({
           ...club,
-          creator: sanitizePublicUserSummary(creator),
+          creator,
           isMember: memberships[club.id] || false,
         })),
         total: count,
@@ -386,12 +380,6 @@ router.get(
       throw new AppError(403, "This club is private");
     }
 
-    const shouldSanitizeClubUsers = club.isPublic === true;
-    const canManageClubMembers =
-      req.user?.role === "admin" ||
-      memberRole === "admin" ||
-      memberRole === "moderator";
-
     // Get moderators and admins
     const staffMembers = await db
       .select({
@@ -399,7 +387,6 @@ router.get(
           id: users.id,
           name: users.name,
           avatarUrl: users.avatarUrl,
-          managedBy: users.managedBy,
         },
         role: clubMembers.role,
       })
@@ -419,7 +406,6 @@ router.get(
           id: users.id,
           name: users.name,
           avatarUrl: users.avatarUrl,
-          managedBy: users.managedBy,
         },
         role: clubMembers.role,
       })
@@ -436,7 +422,6 @@ router.get(
           name: users.name,
           avatarUrl: users.avatarUrl,
           identityVerified: users.identityVerified,
-          managedBy: users.managedBy,
         },
       })
       .from(clubThreads)
@@ -472,33 +457,16 @@ router.get(
       success: true,
       data: {
         ...club,
-        moderators: staffMembers.map((m) =>
-          formatClubUserSummary(m.user, {
-            publicView: shouldSanitizeClubUsers,
-            preserveId: canManageClubMembers,
-            preserveIdForUserId: req.user?.id,
-          }),
-        ),
+        moderators: staffMembers.map((m) => m.user),
         members: allMembers.map((m) => ({
-          ...formatClubUserSummary(m.user, {
-            publicView: shouldSanitizeClubUsers,
-            preserveId: canManageClubMembers,
-            preserveIdForUserId: req.user?.id,
-          }),
+          ...m.user,
           role: m.role,
         })),
         threads: threadList.map(({ thread, author }) => ({
           ...thread,
-          authorId: shouldSanitizeClubUsers
-            ? getPublicUserId(author, {
-                preserveIdForUserId: req.user?.id,
-              })
-            : thread.authorId,
+          authorId: author?.id,
           userVote: threadVoteMap.get(thread.id) || 0,
-          author: formatClubUserSummary(author, {
-            publicView: shouldSanitizeClubUsers,
-            preserveIdForUserId: req.user?.id,
-          }),
+          author,
         })),
         isMember,
         memberRole,
@@ -1037,8 +1005,6 @@ router.get(
       throw new AppError(403, "This club is private");
     }
 
-    const shouldSanitizeClubUsers = club.isPublic === true;
-
     const [threadData] = await db
       .select({
         thread: clubThreads,
@@ -1048,7 +1014,6 @@ router.get(
           avatarUrl: users.avatarUrl,
           role: users.role,
           identityVerified: users.identityVerified,
-          managedBy: users.managedBy,
         },
       })
       .from(clubThreads)
@@ -1086,7 +1051,6 @@ router.get(
           avatarUrl: users.avatarUrl,
           role: users.role,
           identityVerified: users.identityVerified,
-          managedBy: users.managedBy,
         },
       })
       .from(clubComments)
@@ -1119,16 +1083,9 @@ router.get(
       success: true,
       data: {
         ...threadData.thread,
-        authorId: shouldSanitizeClubUsers
-          ? getPublicUserId(threadData.author, {
-              preserveIdForUserId: req.user?.id,
-            })
-          : threadData.thread.authorId,
+        authorId: threadData.author?.id,
         userVote: threadUserVote,
-        author: formatClubUserSummary(threadData.author, {
-          publicView: shouldSanitizeClubUsers,
-          preserveIdForUserId: req.user?.id,
-        }),
+        author: threadData.author,
         memberRole,
         comments: commentList.map(({ comment, author }) => {
           if (comment.isHidden) {
@@ -1136,11 +1093,7 @@ router.get(
               id: comment.id,
               threadId: comment.threadId,
               parentId: comment.parentId,
-              authorId: shouldSanitizeClubUsers
-                ? getPublicUserId(author, {
-                    preserveIdForUserId: req.user?.id,
-                  })
-                : comment.authorId,
+              authorId: author?.id,
               content: "",
               contentHtml: null,
               score: 0,
@@ -1152,16 +1105,9 @@ router.get(
           }
           return {
             ...comment,
-            authorId: shouldSanitizeClubUsers
-              ? getPublicUserId(author, {
-                  preserveIdForUserId: req.user?.id,
-                })
-              : comment.authorId,
+            authorId: author?.id,
             userVote: commentVoteMap.get(comment.id) || 0,
-            author: formatClubUserSummary(author, {
-              publicView: shouldSanitizeClubUsers,
-              preserveIdForUserId: req.user?.id,
-            }),
+            author,
           };
         }),
       },

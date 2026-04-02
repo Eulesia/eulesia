@@ -51,7 +51,7 @@ export function AdminUserDetailPage() {
     );
   }
 
-  const isSopsManagedAdmin = user.isManagedAccount === true;
+  const isSopsManagedAdmin = false; // Admin accounts are now separate entities
 
   const handleRoleChange = (newRole: "citizen" | "institution") => {
     if (!id || newRole === user?.role) return;
@@ -278,7 +278,7 @@ export function AdminUserDetailPage() {
               <h2 className="font-semibold text-gray-900 dark:text-gray-100">
                 {t("userDetail.sanctions")}
               </h2>
-              {!showSanctionForm && user.role !== "admin" && (
+              {!showSanctionForm && (
                 <button
                   onClick={() => setShowSanctionForm(true)}
                   className="text-sm px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Shield,
-  KeyRound,
   Bell,
   BellRing,
   Eye,
@@ -32,7 +31,6 @@ import { useMySanctions } from "../hooks/useAdminApi";
 import { useGuide } from "../hooks/useGuide";
 import {
   useUpdateProfile,
-  useChangePassword,
   useExportData,
   useDeleteAccount,
 } from "../hooks/useApi";
@@ -52,7 +50,6 @@ export function ProfilePage() {
   const { data: mySanctions } = useMySanctions();
   const navigate = useNavigate();
   const updateProfileMutation = useUpdateProfile();
-  const changePasswordMutation = useChangePassword();
   const exportDataMutation = useExportData();
   const deleteAccountMutation = useDeleteAccount();
   // Institution Management - disabled temporarily
@@ -67,13 +64,6 @@ export function ProfilePage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(currentUser?.name || "");
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
-  });
-  const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const { startGuide, hasCompletedGuide, resetAllGuides } = useGuide();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -245,69 +235,6 @@ export function ProfilePage() {
         setEditingName(false);
       },
     });
-  };
-
-  const handlePasswordFieldChange = (
-    field: keyof typeof passwordForm,
-    value: string,
-  ) => {
-    setPasswordForm((prev) => ({ ...prev, [field]: value }));
-    setPasswordError(null);
-    setPasswordSuccess(null);
-  };
-
-  const getPasswordChangeError = (error: unknown) => {
-    const message = error instanceof Error ? error.message : "";
-
-    switch (message) {
-      case "Current password is incorrect":
-        return t("password.errors.currentPasswordIncorrect");
-      case "This account does not support password changes":
-        return t("password.errors.notSupported");
-      default:
-        return t("password.errors.updateFailed");
-    }
-  };
-
-  const handlePasswordChange = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setPasswordError(null);
-    setPasswordSuccess(null);
-
-    if (!passwordForm.currentPassword) {
-      setPasswordError(t("password.errors.currentRequired"));
-      return;
-    }
-
-    if (!passwordForm.newPassword) {
-      setPasswordError(t("password.errors.newRequired"));
-      return;
-    }
-
-    if (passwordForm.newPassword.length < 6) {
-      setPasswordError(t("password.errors.tooShort"));
-      return;
-    }
-
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordError(t("password.errors.confirmMismatch"));
-      return;
-    }
-
-    try {
-      await changePasswordMutation.mutateAsync({
-        currentPassword: passwordForm.currentPassword,
-        newPassword: passwordForm.newPassword,
-      });
-      setPasswordForm({
-        currentPassword: "",
-        newPassword: "",
-        confirmPassword: "",
-      });
-      setPasswordSuccess(t("password.success"));
-    } catch (error) {
-      setPasswordError(getPasswordChangeError(error));
-    }
   };
 
   const handleAvatarClick = () => {
@@ -802,111 +729,6 @@ export function ProfilePage() {
           </div>
         </div>
         */}
-        {currentUser.isManagedAccount && currentUser.hasPassword && (
-          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-800">
-              <h2 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-blue-600" />
-                {t("password.title")}
-              </h2>
-            </div>
-            <div className="p-4 space-y-4">
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <p className="text-sm text-amber-900 font-medium">
-                  {t("password.seedTitle")}
-                </p>
-                <p className="text-xs text-amber-800 mt-1">
-                  {t("password.description")}
-                </p>
-              </div>
-
-              <form onSubmit={handlePasswordChange} className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    {t("password.currentPassword")}
-                  </label>
-                  <input
-                    type="password"
-                    autoComplete="current-password"
-                    value={passwordForm.currentPassword}
-                    onChange={(e) =>
-                      handlePasswordFieldChange(
-                        "currentPassword",
-                        e.target.value,
-                      )
-                    }
-                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    {t("password.newPassword")}
-                  </label>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={6}
-                    value={passwordForm.newPassword}
-                    onChange={(e) =>
-                      handlePasswordFieldChange("newPassword", e.target.value)
-                    }
-                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    {t("password.confirmPassword")}
-                  </label>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={6}
-                    value={passwordForm.confirmPassword}
-                    onChange={(e) =>
-                      handlePasswordFieldChange(
-                        "confirmPassword",
-                        e.target.value,
-                      )
-                    }
-                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-
-                {passwordError && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                    {passwordError}
-                  </div>
-                )}
-
-                {passwordSuccess && (
-                  <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-                    {passwordSuccess}
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between gap-4 pt-2">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {t("password.recovery")}
-                  </p>
-                  <button
-                    type="submit"
-                    disabled={changePasswordMutation.isPending}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {changePasswordMutation.isPending && (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    )}
-                    {changePasswordMutation.isPending
-                      ? t("password.changing")
-                      : t("password.changeButton")}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
         {/* Notification preferences */}
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
           <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-800">

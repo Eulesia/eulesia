@@ -1,9 +1,14 @@
 import type { Request } from "express";
-import type { User } from "../db/schema.js";
+import type { User, AdminAccount } from "../db/schema.js";
 
 export interface AuthenticatedRequest extends Request {
   user?: User;
   sessionId?: string;
+}
+
+export interface AdminAuthenticatedRequest extends Request {
+  admin?: AdminAccount;
+  adminSessionId?: string;
 }
 
 export interface ApiResponse<T = unknown> {

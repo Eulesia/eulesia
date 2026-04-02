@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2, BarChart3 } from "lucide-react";
 import { AdminLayout } from "../../components/admin";
@@ -8,10 +8,16 @@ export function AdminTransparencyPage() {
   const { t } = useTranslation("admin");
   const [period, setPeriod] = useState("30");
 
-  const from = new Date(
-    Date.now() - parseInt(period) * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  const to = new Date().toISOString();
+  const { from, to } = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    return {
+      from: new Date(
+        now - parseInt(period) * 24 * 60 * 60 * 1000,
+      ).toISOString(),
+      to: new Date(now).toISOString(),
+    };
+  }, [period]);
 
   const { data, isLoading } = useTransparencyStats(from, to);
 

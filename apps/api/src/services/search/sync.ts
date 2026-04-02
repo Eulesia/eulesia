@@ -18,10 +18,6 @@ import { sql } from "drizzle-orm";
 import { getMinuteSources } from "../import/fetchers/index.js";
 import { getAdminLevel, getEntityName } from "../import/fetchers/types.js";
 import {
-  getPublicAccountName,
-  isPubliclyDiscoverableAccount,
-} from "../../utils/operatorAccounts.js";
-import {
   initializeIndexes,
   indexUsers,
   indexThreads,
@@ -114,7 +110,6 @@ async function syncUsers(): Promise<number> {
       username: users.username,
       role: users.role,
       avatarUrl: users.avatarUrl,
-      managedBy: users.managedBy,
       institutionType: users.institutionType,
       institutionName: users.institutionName,
       identityProvider: users.identityProvider,
@@ -125,7 +120,6 @@ async function syncUsers(): Promise<number> {
   const docs: UserDocument[] = allUsers
     .filter((u) => u.role !== null) // Skip users with null role
     .filter((u) => u.identityProvider !== "eulesia-bot") // Hide bot-managed institution placeholders
-    .filter((u) => isPubliclyDiscoverableAccount(u))
     .map((u) => ({
       id: u.id,
       name: u.name,
@@ -150,7 +144,6 @@ async function syncThreads(): Promise<number> {
     .select({
       thread: threads,
       authorName: users.name,
-      authorManagedBy: users.managedBy,
       municipalityName: municipalities.name,
     })
     .from(threads)
@@ -173,13 +166,7 @@ async function syncThreads(): Promise<number> {
     title: t.thread.title,
     content: t.thread.content.substring(0, 10000), // Limit content size
     scope: t.thread.scope,
-    authorName: getPublicAccountName(
-      {
-        managedBy: t.authorManagedBy,
-        name: t.authorName,
-      },
-      "Unknown",
-    ),
+    authorName: t.authorName || "Unknown",
     authorId: t.thread.authorId,
     municipalityName: t.municipalityName || undefined,
     municipalityId: t.thread.municipalityId || undefined,

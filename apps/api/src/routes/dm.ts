@@ -17,7 +17,6 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { io } from "../index.js";
 import { notify } from "../services/notify.js";
 import type { AuthenticatedRequest } from "../types/index.js";
-import { formatUserSummaryForResponse as formatUserSummary } from "../utils/operatorAccounts.js";
 
 const router = Router();
 
@@ -106,14 +105,14 @@ router.get(
 
         return {
           id: conv.id,
-          otherUser: otherUser ? formatUserSummary(otherUser) : null,
+          otherUser: otherUser ?? null,
           lastMessage: latestMessage
             ? {
                 id: latestMessage.message.id,
                 conversationId: latestMessage.message.conversationId,
                 content: latestMessage.message.content,
                 contentHtml: latestMessage.message.contentHtml,
-                author: formatUserSummary(latestMessage.author),
+                author: latestMessage.author,
                 createdAt: latestMessage.message.createdAt?.toISOString(),
               }
             : null,
@@ -167,7 +166,7 @@ router.post(
         success: true,
         data: {
           id: convId,
-          otherUser: formatUserSummary(otherUser),
+          otherUser,
           lastMessage: null,
           unreadCount: 0,
           updatedAt: new Date().toISOString(),
@@ -188,7 +187,7 @@ router.post(
       success: true,
       data: {
         id: conv.id,
-        otherUser: formatUserSummary(otherUser),
+        otherUser,
         lastMessage: null,
         unreadCount: 0,
         updatedAt: conv.updatedAt?.toISOString(),
@@ -293,7 +292,7 @@ router.get(
       success: true,
       data: {
         id: conversationId,
-        otherUser: otherUser ? formatUserSummary(otherUser) : null,
+        otherUser: otherUser ?? null,
         messages: messagesData
           .map(({ message, author }) => {
             if (message.isHidden) {
@@ -313,7 +312,7 @@ router.get(
               conversationId: message.conversationId,
               content: message.content,
               contentHtml: message.contentHtml,
-              author: formatUserSummary(author),
+              author,
               editedAt: message.editedAt?.toISOString() || null,
               createdAt: message.createdAt?.toISOString(),
             };
@@ -381,7 +380,7 @@ router.post(
       conversationId: message.conversationId,
       content: message.content,
       contentHtml: message.contentHtml,
-      author: formatUserSummary(author),
+      author,
       createdAt: message.createdAt?.toISOString(),
     };
 
@@ -503,7 +502,7 @@ router.patch(
       content: updated.content,
       contentHtml: updated.contentHtml,
       editedAt: updated.editedAt,
-      author: formatUserSummary(author),
+      author,
     });
 
     res.json({ success: true, data: updated });

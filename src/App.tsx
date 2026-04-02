@@ -8,6 +8,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
+import { AdminAuthProvider, useAdminAuth } from "./hooks/useAdminAuth";
 import { SocketProvider } from "./hooks/useSocket";
 import { GuideProvider } from "./components/guide";
 import { CookieConsent } from "./components/common/CookieConsent";
@@ -170,6 +171,11 @@ const AdminWaitlistPage = lazy(() =>
     default: m.AdminWaitlistPage,
   })),
 );
+const AdminLoginPage = lazy(() =>
+  import("./pages/admin/AdminLoginPage").then((m) => ({
+    default: m.AdminLoginPage,
+  })),
+);
 
 function LoadingScreen() {
   return (
@@ -207,18 +213,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, currentUser } = useAuth();
+  const { isAuthenticated, isLoading } = useAdminAuth();
 
   if (isLoading) {
     return <LoadingScreen />;
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (currentUser?.role !== "admin") {
-    return <Navigate to="/agora" replace />;
+    return <Navigate to="/admin/login" replace />;
   }
 
   return <>{children}</>;
@@ -462,6 +464,14 @@ function AppRoutes() {
 
         {/* Admin routes */}
         <Route
+          path="/admin/login"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <AdminLoginPage />
+            </Suspense>
+          }
+        />
+        <Route
           path="/admin"
           element={
             <AdminRoute>
@@ -658,15 +668,17 @@ function App() {
           <DeepLinkHandler />
           <BackButtonHandler />
           <AuthProvider>
-            <SocketProvider>
-              <NativePushHandler />
-              <GuideProvider>
-                <AppRoutes />
-                <CookieConsent />
-                <PWAUpdatePrompt />
-                <PWAInstallBanner />
-              </GuideProvider>
-            </SocketProvider>
+            <AdminAuthProvider>
+              <SocketProvider>
+                <NativePushHandler />
+                <GuideProvider>
+                  <AppRoutes />
+                  <CookieConsent />
+                  <PWAUpdatePrompt />
+                  <PWAInstallBanner />
+                </GuideProvider>
+              </SocketProvider>
+            </AdminAuthProvider>
           </AuthProvider>
         </BrowserRouter>
       </PWAProvider>

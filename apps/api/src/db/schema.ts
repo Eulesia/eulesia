@@ -292,8 +292,6 @@ export const users = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     avatarUrl: varchar("avatar_url", { length: 500 }),
     role: userRoleEnum("role").default("citizen"),
-    managedBy: varchar("managed_by", { length: 50 }),
-    managedKey: varchar("managed_key", { length: 100 }),
     institutionType: institutionTypeEnum("institution_type"),
     institutionName: varchar("institution_name", { length: 255 }),
     businessId: varchar("business_id", { length: 50 }), // Y-tunnus (FI), org.nr (SE), etc.
@@ -339,11 +337,6 @@ export const users = pgTable(
     emailIdx: index("users_email_idx").on(table.email),
     usernameIdx: index("users_username_idx").on(table.username),
     rpSubjectIdx: uniqueIndex("users_rp_subject_idx").on(table.rpSubject),
-    managedByIdx: index("users_managed_by_idx").on(table.managedBy),
-    managedKeyUniqueIdx: uniqueIndex("users_managed_key_unique_idx").on(
-      table.managedBy,
-      table.managedKey,
-    ),
     municipalityIdx: index("users_municipality_idx").on(table.municipalityId),
     invitedByIdx: index("users_invited_by_idx").on(table.invitedBy),
   }),
@@ -369,6 +362,48 @@ export const sessions = pgTable(
   }),
 );
 
+// Admin Accounts (separate from users — operator identities managed via SOPS)
+export const adminAccounts = pgTable(
+  "admin_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    username: varchar("username", { length: 50 }).unique().notNull(),
+    email: varchar("email", { length: 255 }).unique(),
+    passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    managedBy: varchar("managed_by", { length: 50 }).notNull(),
+    managedKey: varchar("managed_key", { length: 100 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  },
+  (table) => ({
+    managedKeyUniqueIdx: uniqueIndex(
+      "admin_accounts_managed_key_unique_idx",
+    ).on(table.managedBy, table.managedKey),
+  }),
+);
+
+// Admin Sessions (separate from citizen sessions)
+export const adminSessions = pgTable(
+  "admin_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    adminId: uuid("admin_id")
+      .notNull()
+      .references(() => adminAccounts.id, { onDelete: "cascade" }),
+    tokenHash: varchar("token_hash", { length: 255 }).notNull(),
+    ipAddress: inet("ip_address"),
+    userAgent: text("user_agent"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => ({
+    adminIdx: index("admin_sessions_admin_idx").on(table.adminId),
+    tokenIdx: index("admin_sessions_token_idx").on(table.tokenHash),
+  }),
+);
+
 // Magic Links
 export const magicLinks = pgTable(
   "magic_links",
@@ -391,7 +426,7 @@ export const inviteCodes = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     code: varchar("code", { length: 20 }).unique().notNull(), // e.g., EULESIA-A7X9K2
-    createdBy: uuid("created_by").references(() => users.id), // null = admin-created
+    createdBy: uuid("created_by"), // references admin_accounts or users (FK dropped for cross-table audit)
     usedBy: uuid("used_by").references(() => users.id),
     status: inviteCodeStatusEnum("status").default("available"),
     usedAt: timestamp("used_at", { withTimezone: true }),
@@ -416,8 +451,8 @@ export const waitlist = pgTable(
     locale: varchar("locale", { length: 10 }).default("en"),
     ipAddress: inet("ip_address"),
     inviteCodeId: uuid("invite_code_id").references(() => inviteCodes.id),
-    approvedBy: uuid("approved_by").references(() => users.id),
-    rejectedBy: uuid("rejected_by").references(() => users.id),
+    approvedBy: uuid("approved_by"), // references admin_accounts (FK dropped for cross-table audit)
+    rejectedBy: uuid("rejected_by"), // references admin_accounts (FK dropped for cross-table audit)
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     rejectedAt: timestamp("rejected_at", { withTimezone: true }),
     emailSentAt: timestamp("email_sent_at", { withTimezone: true }),
@@ -967,7 +1002,7 @@ export const institutionManagers = pgTable(
     status: institutionClaimStatusEnum("status").notNull().default("pending"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
-    approvedBy: uuid("approved_by").references(() => users.id),
+    approvedBy: uuid("approved_by"), // references admin_accounts (FK dropped for cross-table audit)
   },
   (table) => ({
     institutionIdx: index("institution_managers_institution_idx").on(
@@ -1098,7 +1133,7 @@ export const contentReports = pgTable(
     reason: reportReasonEnum("reason").notNull(),
     description: text("description"),
     status: reportStatusEnum("status").default("pending"),
-    assignedTo: uuid("assigned_to").references(() => users.id),
+    assignedTo: uuid("assigned_to"), // references admin_accounts (FK dropped for cross-table audit)
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
@@ -1117,9 +1152,7 @@ export const moderationActions = pgTable(
   "moderation_actions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    adminUserId: uuid("admin_user_id")
-      .notNull()
-      .references(() => users.id),
+    adminUserId: uuid("admin_user_id").notNull(), // references admin_accounts (FK dropped for cross-table audit)
     actionType: actionTypeEnum("action_type").notNull(),
     targetType: contentTypeEnum("target_type").notNull(),
     targetId: uuid("target_id").notNull(),
@@ -1148,13 +1181,11 @@ export const userSanctions = pgTable(
       .references(() => users.id),
     sanctionType: sanctionTypeEnum("sanction_type").notNull(),
     reason: text("reason"),
-    issuedBy: uuid("issued_by")
-      .notNull()
-      .references(() => users.id),
+    issuedBy: uuid("issued_by").notNull(), // references admin_accounts (FK dropped for cross-table audit)
     issuedAt: timestamp("issued_at", { withTimezone: true }).defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
-    revokedBy: uuid("revoked_by").references(() => users.id),
+    revokedBy: uuid("revoked_by"), // references admin_accounts (FK dropped for cross-table audit)
   },
   (table) => ({
     userIdx: index("user_sanctions_user_idx").on(table.userId),
@@ -1180,7 +1211,7 @@ export const moderationAppeals = pgTable(
     reason: text("reason").notNull(),
     status: appealStatusEnum("status").default("pending"),
     adminResponse: text("admin_response"),
-    respondedBy: uuid("responded_by").references(() => users.id),
+    respondedBy: uuid("responded_by"), // references admin_accounts (FK dropped for cross-table audit)
     respondedAt: timestamp("responded_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
@@ -1591,6 +1622,10 @@ export const moderationAppealsRelations = relations(
 // Types for insertion
 export type NewUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
+export type NewAdminAccount = typeof adminAccounts.$inferInsert;
+export type AdminAccount = typeof adminAccounts.$inferSelect;
+export type NewAdminSession = typeof adminSessions.$inferInsert;
+export type AdminSession = typeof adminSessions.$inferSelect;
 export type NewThread = typeof threads.$inferInsert;
 export type Thread = typeof threads.$inferSelect;
 export type NewComment = typeof comments.$inferInsert;

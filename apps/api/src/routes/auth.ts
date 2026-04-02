@@ -41,7 +41,6 @@ import {
 } from "../services/iduraFtn.js";
 import { indexUser } from "../services/search/meilisearch.js";
 import type { AuthenticatedRequest } from "../types/index.js";
-import { isSopsManagedOperatorAccount } from "../utils/operatorAccounts.js";
 
 const router = Router();
 const ftnEnabled = isIduraFtnEnabled();
@@ -325,20 +324,6 @@ router.post(
   asyncHandler(async (req, res: Response) => {
     const { email } = magicLinkSchema.parse(req.body);
     const normalizedEmail = email.toLowerCase();
-
-    const [managedAccount] = await db
-      .select({ id: users.id, managedBy: users.managedBy })
-      .from(users)
-      .where(eq(users.email, normalizedEmail))
-      .limit(1);
-
-    if (managedAccount && isSopsManagedOperatorAccount(managedAccount)) {
-      res.json({
-        success: true,
-        message: "If an account exists, you will receive a login link",
-      });
-      return;
-    }
 
     // Generate token
     const { token, hash } = generateMagicLinkToken();
@@ -718,14 +703,6 @@ router.get(
       .where(eq(users.email, magicLink.email))
       .limit(1);
 
-    if (user && isSopsManagedOperatorAccount(user)) {
-      res.status(403).json({
-        success: false,
-        error: "This account must use password login",
-      });
-      return;
-    }
-
     if (!user) {
       // Create new user with generated username from email
       const baseUsername = magicLink.email
@@ -832,7 +809,7 @@ router.get(
         },
         onboardingCompletedAt: user.onboardingCompletedAt,
         createdAt: user.createdAt,
-        isManagedAccount: isSopsManagedOperatorAccount(user),
+        isManagedAccount: false,
         hasPassword: Boolean(user.passwordHash),
       },
     });

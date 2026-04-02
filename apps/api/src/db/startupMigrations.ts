@@ -237,4 +237,87 @@ export async function runStartupMigrations() {
   await db.execute(
     sql`DO $$ BEGIN ALTER TABLE "rooms" RENAME COLUMN "message_count" TO "thread_count"; EXCEPTION WHEN undefined_column THEN null; END $$`,
   );
+
+  // 0019: Separate admin accounts from users table
+  // Create admin_accounts table
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS "admin_accounts" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "username" VARCHAR(50) UNIQUE NOT NULL,
+    "email" VARCHAR(255) UNIQUE,
+    "password_hash" VARCHAR(255) NOT NULL,
+    "name" VARCHAR(255) NOT NULL,
+    "managed_by" VARCHAR(50) NOT NULL,
+    "managed_key" VARCHAR(100) NOT NULL,
+    "created_at" TIMESTAMPTZ DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ DEFAULT NOW(),
+    "last_seen_at" TIMESTAMPTZ
+  )`);
+  await db.execute(
+    sql`CREATE UNIQUE INDEX IF NOT EXISTS "admin_accounts_managed_key_unique_idx" ON "admin_accounts" ("managed_by", "managed_key")`,
+  );
+
+  // Create admin_sessions table
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS "admin_sessions" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "admin_id" UUID NOT NULL REFERENCES "admin_accounts"("id") ON DELETE CASCADE,
+    "token_hash" VARCHAR(255) NOT NULL,
+    "ip_address" INET,
+    "user_agent" TEXT,
+    "expires_at" TIMESTAMPTZ NOT NULL,
+    "created_at" TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await db.execute(
+    sql`CREATE INDEX IF NOT EXISTS "admin_sessions_admin_idx" ON "admin_sessions" ("admin_id")`,
+  );
+  await db.execute(
+    sql`CREATE INDEX IF NOT EXISTS "admin_sessions_token_idx" ON "admin_sessions" ("token_hash")`,
+  );
+
+  // Migrate existing admin data from users → admin_accounts (preserving IDs)
+  await db.execute(sql`
+    INSERT INTO "admin_accounts" ("id", "username", "email", "password_hash", "name", "managed_by", "managed_key", "created_at", "updated_at", "last_seen_at")
+    SELECT "id", "username", "email", "password_hash", "name", "managed_by", "managed_key", "created_at", "updated_at", "last_seen_at"
+    FROM "users" WHERE "managed_by" = 'sops_admin'
+    ON CONFLICT ("managed_by", "managed_key") DO NOTHING
+  `);
+
+  // Drop FK constraints on admin-actor columns (these now reference admin_accounts, not users)
+  await db.execute(
+    sql`ALTER TABLE "moderation_actions" DROP CONSTRAINT IF EXISTS "moderation_actions_admin_user_id_users_id_fk"`,
+  );
+  await db.execute(
+    sql`ALTER TABLE "user_sanctions" DROP CONSTRAINT IF EXISTS "user_sanctions_issued_by_users_id_fk"`,
+  );
+  await db.execute(
+    sql`ALTER TABLE "user_sanctions" DROP CONSTRAINT IF EXISTS "user_sanctions_revoked_by_users_id_fk"`,
+  );
+  await db.execute(
+    sql`ALTER TABLE "content_reports" DROP CONSTRAINT IF EXISTS "content_reports_assigned_to_users_id_fk"`,
+  );
+  await db.execute(
+    sql`ALTER TABLE "moderation_appeals" DROP CONSTRAINT IF EXISTS "moderation_appeals_responded_by_users_id_fk"`,
+  );
+  await db.execute(
+    sql`ALTER TABLE "waitlist" DROP CONSTRAINT IF EXISTS "waitlist_approved_by_users_id_fk"`,
+  );
+  await db.execute(
+    sql`ALTER TABLE "waitlist" DROP CONSTRAINT IF EXISTS "waitlist_rejected_by_users_id_fk"`,
+  );
+  await db.execute(
+    sql`ALTER TABLE "invite_codes" DROP CONSTRAINT IF EXISTS "invite_codes_created_by_users_id_fk"`,
+  );
+
+  // Delete admin sessions and user rows
+  await db.execute(
+    sql`DELETE FROM "sessions" WHERE "user_id" IN (SELECT "id" FROM "users" WHERE "managed_by" = 'sops_admin')`,
+  );
+  await db.execute(sql`DELETE FROM "users" WHERE "managed_by" = 'sops_admin'`);
+
+  // Drop managed columns from users table
+  await db.execute(sql`DROP INDEX IF EXISTS "users_managed_by_idx"`);
+  await db.execute(sql`DROP INDEX IF EXISTS "users_managed_key_unique_idx"`);
+  await db.execute(sql`ALTER TABLE "users" DROP COLUMN IF EXISTS "managed_by"`);
+  await db.execute(
+    sql`ALTER TABLE "users" DROP COLUMN IF EXISTS "managed_key"`,
+  );
 }

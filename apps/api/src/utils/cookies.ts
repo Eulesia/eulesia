@@ -42,3 +42,13 @@ export function getSessionCookieOptions(req?: Request) {
     path: "/",
   };
 }
+
+export function getAdminSessionCookieOptions(req?: Request) {
+  return {
+    httpOnly: true,
+    secure: shouldUseSecureCookies(req),
+    sameSite: "lax" as const,
+    domain: env.COOKIE_DOMAIN,
+    path: "/",
+  };
+}

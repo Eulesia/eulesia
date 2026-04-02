@@ -1,50 +1,37 @@
 import { readFile } from "fs/promises";
 import { and, eq, or } from "drizzle-orm";
-import { db, sessions, users } from "../db/index.js";
+import { db, adminAccounts, adminSessions } from "../db/index.js";
 import {
   parseBootstrapAdminAccounts,
   type BootstrapAdminAccount,
   resolveBootstrapAdminPassword,
   selectExistingBootstrapAdmin,
 } from "../services/adminAccounts.js";
-import { INDEXES, deleteDocument } from "../services/search/meilisearch.js";
-import {
-  SOPS_ADMIN_ACCOUNT_MANAGER,
-  isSopsManagedOperatorAccount,
-} from "../utils/operatorAccounts.js";
 
 async function findExistingAccount(account: BootstrapAdminAccount) {
   const matches = await db
     .select()
-    .from(users)
+    .from(adminAccounts)
     .where(
       account.email
         ? or(
             and(
-              eq(users.managedBy, SOPS_ADMIN_ACCOUNT_MANAGER),
-              eq(users.managedKey, account.managedKey),
+              eq(adminAccounts.managedBy, "sops_admin"),
+              eq(adminAccounts.managedKey, account.managedKey),
             ),
-            eq(users.email, account.email),
-            eq(users.username, account.username),
+            eq(adminAccounts.email, account.email),
+            eq(adminAccounts.username, account.username),
           )
         : or(
             and(
-              eq(users.managedBy, SOPS_ADMIN_ACCOUNT_MANAGER),
-              eq(users.managedKey, account.managedKey),
+              eq(adminAccounts.managedBy, "sops_admin"),
+              eq(adminAccounts.managedKey, account.managedKey),
             ),
-            eq(users.username, account.username),
+            eq(adminAccounts.username, account.username),
           ),
     );
 
   return selectExistingBootstrapAdmin(account, matches);
-}
-
-async function hideFromUserSearch(userId: string): Promise<void> {
-  try {
-    await deleteDocument(INDEXES.USERS, userId);
-  } catch (error) {
-    console.warn("Failed to remove managed admin from users index:", error);
-  }
 }
 
 async function upsertBootstrapAdmin(account: BootstrapAdminAccount) {
@@ -53,21 +40,8 @@ async function upsertBootstrapAdmin(account: BootstrapAdminAccount) {
     email: account.email ?? null,
     username: account.username,
     name: account.name,
-    role: "admin" as const,
-    managedBy: SOPS_ADMIN_ACCOUNT_MANAGER,
+    managedBy: "sops_admin",
     managedKey: account.managedKey,
-    institutionType: null,
-    institutionName: null,
-    municipalityId: null,
-    inviteCodesRemaining: 0,
-    identityVerified: false,
-    identityProvider: "password",
-    identityLevel: "basic" as const,
-    verifiedName: null,
-    rpSubject: null,
-    identityIssuer: null,
-    identityVerifiedAt: null,
-    deletedAt: null,
     updatedAt: new Date(),
   };
 
@@ -75,20 +49,14 @@ async function upsertBootstrapAdmin(account: BootstrapAdminAccount) {
     const passwordDecision = await resolveBootstrapAdminPassword({
       seedPassword: account.password,
     });
-    const [created] = await db
-      .insert(users)
-      .values({
-        ...baseValues,
-        passwordHash: passwordDecision.passwordHash,
-      })
-      .returning({
-        id: users.id,
-      });
-    await hideFromUserSearch(created.id);
+    await db.insert(adminAccounts).values({
+      ...baseValues,
+      passwordHash: passwordDecision.passwordHash,
+    });
     return "created" as const;
   }
 
-  if (!isSopsManagedOperatorAccount(existing)) {
+  if (existing.managedBy !== "sops_admin") {
     throw new Error(
       `Refusing to adopt existing non-managed account ${existing.username}; create a dedicated operator account instead`,
     );
@@ -105,14 +73,18 @@ async function upsertBootstrapAdmin(account: BootstrapAdminAccount) {
   };
 
   await db.transaction(async (tx) => {
-    await tx.update(users).set(values).where(eq(users.id, existing.id));
+    await tx
+      .update(adminAccounts)
+      .set(values)
+      .where(eq(adminAccounts.id, existing.id));
 
     if (passwordDecision.revokeSessions) {
-      await tx.delete(sessions).where(eq(sessions.userId, existing.id));
+      await tx
+        .delete(adminSessions)
+        .where(eq(adminSessions.adminId, existing.id));
     }
   });
 
-  await hideFromUserSearch(existing.id);
   return "updated" as const;
 }
 

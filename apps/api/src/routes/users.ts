@@ -16,7 +16,6 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { getSessionCookieOptions } from "../utils/cookies.js";
 import { hashPassword, verifyPassword } from "../utils/crypto.js";
 import type { AuthenticatedRequest } from "../types/index.js";
-import { isSopsManagedOperatorAccount } from "../utils/operatorAccounts.js";
 
 const router = Router();
 
@@ -49,7 +48,7 @@ router.get(
         verifiedName: users.verifiedName,
         avatarUrl: users.avatarUrl,
         role: users.role,
-        managedBy: users.managedBy,
+
         institutionType: users.institutionType,
         institutionName: users.institutionName,
         identityVerified: users.identityVerified,
@@ -62,12 +61,6 @@ router.get(
     if (!user) {
       throw new AppError(404, "User not found");
     }
-
-    if (isSopsManagedOperatorAccount(user)) {
-      throw new AppError(404, "User not found");
-    }
-
-    const { managedBy: _managedBy, ...publicUser } = user;
 
     // Get user's public Agora threads (not club threads or private content)
     const userThreads = await db
@@ -207,7 +200,7 @@ router.get(
     res.json({
       success: true,
       data: {
-        ...publicUser,
+        ...user,
         threads: userThreads.map((t) => ({
           ...t,
           tags: tagsByThread[t.id] || [],
@@ -240,17 +233,6 @@ router.patch(
     const userId = currentUser.id;
     const updates = updateUserSchema.parse(req.body);
 
-    if (
-      isSopsManagedOperatorAccount(req.user) &&
-      (updates.name !== undefined ||
-        updates.avatarUrl !== undefined ||
-        updates.municipalityId !== undefined)
-    ) {
-      throw new AppError(
-        400,
-        "Bootstrap-managed admin accounts cannot change managed profile fields",
-      );
-    }
     if (
       currentUser.identityVerified &&
       typeof updates.name === "string" &&
@@ -543,13 +525,6 @@ router.delete(
   authMiddleware,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user!.id;
-
-    if (isSopsManagedOperatorAccount(req.user)) {
-      throw new AppError(
-        403,
-        "Bootstrap-managed admin accounts cannot self-delete",
-      );
-    }
 
     const {
       notifications,

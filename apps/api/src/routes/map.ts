@@ -14,10 +14,6 @@ import { authMiddleware, optionalAuthMiddleware } from "../middleware/auth.js";
 import { AppError } from "../middleware/errorHandler.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import type { AuthenticatedRequest } from "../types/index.js";
-import {
-  getPublicUserId,
-  sanitizePublicUserSummary,
-} from "../utils/operatorAccounts.js";
 
 const router = Router();
 
@@ -365,7 +361,6 @@ router.get(
             name: users.name,
             avatarUrl: users.avatarUrl,
             role: users.role,
-            managedBy: users.managedBy,
           },
         })
         .from(threads)
@@ -387,8 +382,8 @@ router.get(
           ...municipality,
           threads: recentThreads.map((t) => ({
             ...t.thread,
-            authorId: getPublicUserId(t.author),
-            author: sanitizePublicUserSummary(t.author),
+            authorId: t.author?.id,
+            author: t.author,
           })),
           clubs: municipalityClubs,
         },
@@ -417,7 +412,6 @@ router.get(
             name: users.name,
             avatarUrl: users.avatarUrl,
             role: users.role,
-            managedBy: users.managedBy,
           },
         })
         .from(threads)
@@ -440,8 +434,8 @@ router.get(
           municipality: place.municipality,
           threads: placeThreads.map((t) => ({
             ...t.thread,
-            authorId: getPublicUserId(t.author),
-            author: sanitizePublicUserSummary(t.author),
+            authorId: t.author?.id,
+            author: t.author,
           })),
           clubs: placeClubs,
         },
@@ -455,7 +449,6 @@ router.get(
             name: users.name,
             avatarUrl: users.avatarUrl,
             role: users.role,
-            managedBy: users.managedBy,
           },
           municipality: municipalities,
           place: places,
@@ -481,9 +474,9 @@ router.get(
         success: true,
         data: {
           ...thread.thread,
-          authorId: getPublicUserId(thread.author),
+          authorId: thread.author?.id,
           tags: tags.map((t) => t.tag),
-          author: sanitizePublicUserSummary(thread.author),
+          author: thread.author,
           municipality: thread.municipality,
           place: thread.place,
         },

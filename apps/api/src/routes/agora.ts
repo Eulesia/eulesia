@@ -26,11 +26,6 @@ import crypto from "crypto";
 import { io } from "../index.js";
 import { notify } from "../services/notify.js";
 import type { AuthenticatedRequest } from "../types/index.js";
-import {
-  getPublicUserId,
-  getPublicAccountName,
-  sanitizePublicUserSummary,
-} from "../utils/operatorAccounts.js";
 
 const router = Router();
 
@@ -284,7 +279,6 @@ router.get(
           institutionType: users.institutionType,
           institutionName: users.institutionName,
           identityVerified: users.identityVerified,
-          managedBy: users.managedBy,
         },
         municipality: municipalities,
       })
@@ -386,9 +380,9 @@ router.get(
       data: {
         items: filteredThreads.map(({ thread, author, municipality }) => ({
           ...thread,
-          authorId: getPublicUserId(author),
+          authorId: author?.id,
           tags: tagsByThread[thread.id] || [],
-          author: sanitizePublicUserSummary(author),
+          author,
           municipality,
           userVote: userVotes[thread.id] || 0,
           sourceInstitutionName: thread.sourceInstitutionId
@@ -434,7 +428,6 @@ router.get(
           institutionType: users.institutionType,
           institutionName: users.institutionName,
           identityVerified: users.identityVerified,
-          managedBy: users.managedBy,
         },
         municipality: municipalities,
       })
@@ -485,7 +478,6 @@ router.get(
           institutionType: users.institutionType,
           institutionName: users.institutionName,
           identityVerified: users.identityVerified,
-          managedBy: users.managedBy,
         },
       })
       .from(comments)
@@ -557,25 +549,21 @@ router.get(
     let editorName: string | null = null;
     if (threadData.thread.editedBy) {
       const [editor] = await db
-        .select({ name: users.name, managedBy: users.managedBy })
+        .select({ name: users.name })
         .from(users)
         .where(eq(users.id, threadData.thread.editedBy))
         .limit(1);
-      editorName = editor ? getPublicAccountName(editor) : null;
+      editorName = editor?.name ?? null;
     }
 
     res.json({
       success: true,
       data: {
         ...threadData.thread,
-        authorId: getPublicUserId(threadData.author, {
-          preserveIdForUserId: userId,
-        }),
+        authorId: threadData.author?.id,
         editorName,
         tags: tags.map((t) => t.tag),
-        author: sanitizePublicUserSummary(threadData.author, {
-          preserveIdForUserId: userId,
-        }),
+        author: threadData.author,
         municipality: threadData.municipality,
         userVote: threadUserVote,
         isBookmarked,
@@ -587,9 +575,7 @@ router.get(
               id: comment.id,
               threadId: comment.threadId,
               parentId: comment.parentId,
-              authorId: getPublicUserId(author, {
-                preserveIdForUserId: userId,
-              }),
+              authorId: author?.id,
               content: "",
               contentHtml: null,
               score: 0,
@@ -602,12 +588,8 @@ router.get(
           }
           return {
             ...comment,
-            authorId: getPublicUserId(author, {
-              preserveIdForUserId: userId,
-            }),
-            author: sanitizePublicUserSummary(author, {
-              preserveIdForUserId: userId,
-            }),
+            authorId: author?.id,
+            author,
             userVote: userVotes[comment.id] || 0,
           };
         }),
@@ -1391,7 +1373,6 @@ router.get(
           id: users.id,
           name: users.name,
           avatarUrl: users.avatarUrl,
-          managedBy: users.managedBy,
         },
       })
       .from(editHistory)
@@ -1408,7 +1389,7 @@ router.get(
       success: true,
       data: history.map((entry) => ({
         ...entry,
-        editor: sanitizePublicUserSummary(entry.editor),
+        editor: entry.editor,
       })),
     });
   }),
@@ -1552,7 +1533,6 @@ router.get(
           role: users.role,
           institutionType: users.institutionType,
           institutionName: users.institutionName,
-          managedBy: users.managedBy,
         },
         municipality: municipalities,
       })
@@ -1635,9 +1615,9 @@ router.get(
         institution: topicInfo || null,
         items: threadList.map(({ thread, author, municipality }) => ({
           ...thread,
-          authorId: getPublicUserId(author),
+          authorId: author?.id,
           tags: tagsByThread[thread.id] || [],
-          author: sanitizePublicUserSummary(author),
+          author,
           municipality,
           userVote: userVotes[thread.id] || 0,
           sourceInstitutionName: thread.sourceInstitutionId
