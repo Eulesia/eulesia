@@ -1,4 +1,4 @@
-import { runStartupMigrations } from "../db/startupMigrations";
+import { runStartupMigrations } from "../db/startupMigrations.js";
 
 runStartupMigrations()
   .then(() => {

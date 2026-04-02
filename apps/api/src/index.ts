@@ -23,7 +23,7 @@ import {
 } from "./services/search/index.js";
 import { hashToken } from "./utils/crypto.js";
 import { getActiveBlockingSanction } from "./utils/sanctions.js";
-import { runStartupMigrations } from "./db/startupMigrations";
+import { runStartupMigrations } from "./db/startupMigrations.js";
 
 // Upload directory (relative to project root)
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "./uploads";
