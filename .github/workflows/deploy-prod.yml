@@ -80,15 +80,28 @@ jobs:
       - name: Health checks
         run: |
           SSH="ssh -o BatchMode=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes -i $HOME/.ssh/id_ed25519 root@$EULESIA_PROD_TARGET_HOST"
-          for _ in $(seq 1 30); do
-            if $SSH "curl -fsS -H 'Host: eulesia.org' http://127.0.0.1:8080/api/v1/health" >/dev/null; then
+
+          echo "Waiting for API to become healthy..."
+          HEALTHY=false
+          for i in $(seq 1 30); do
+            if $SSH "curl -fsS -H 'Host: eulesia.org' http://127.0.0.1:8080/api/v1/health" 2>/dev/null; then
+              HEALTHY=true
               break
             fi
+            echo "Attempt $i/30 — not ready, waiting 5s..."
             sleep 5
           done
-          $SSH "curl -fsS -H 'Host: eulesia.org' http://127.0.0.1:8080/api/v1/health"
-          $SSH "curl -fsS -H 'Host: eulesia.org' http://127.0.0.1:8080/api/v1/auth/config" | tee /tmp/auth-config.json
+
+          if [ "$HEALTHY" != "true" ]; then
+            echo "::error::API failed to become healthy after 150s"
+            exit 1
+          fi
+
+          echo "Verifying auth config..."
+          $SSH "curl -fsS -H 'Host: eulesia.org' http://127.0.0.1:8080/api/v1/auth/config" > /tmp/auth-config.json
+          cat /tmp/auth-config.json
           jq -e '.registrationMode == "ftn-open"' /tmp/auth-config.json >/dev/null
+          echo "All health checks passed."
 
       - name: Generate deploy summary
         if: always()
