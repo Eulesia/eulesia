@@ -26,7 +26,9 @@ async fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("fallback db: {e}"))?
     };
 
-    let state = AppState { db };
+    let state = AppState {
+        db: std::sync::Arc::new(db),
+    };
     let app = eulesia_api::router(state).layer(TraceLayer::new_for_http());
 
     let addr = config.bind_addr();
