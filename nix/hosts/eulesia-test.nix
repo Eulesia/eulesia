@@ -264,8 +264,9 @@
       };
     };
 
+    # v2 Rust server — disabled until eulesia_v2 database is provisioned
     eulesia-server = {
-      enable = true;
+      enable = false;
       package = eulesiaPackages.server;
     };
   };
