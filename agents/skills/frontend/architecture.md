@@ -124,6 +124,23 @@ type AppError = {
 | Authenticated user | Context              | `useAuth()`                               |
 | Thread list cache  | React Query          | `useQuery(['threads', scope])`            |
 
+## Auth and role architecture
+
+Three distinct role systems — never conflate them:
+
+| System         | Roles                                 | Scope          | Auth hook                      |
+| -------------- | ------------------------------------- | -------------- | ------------------------------ |
+| Platform user  | `citizen`, `institution`, `moderator` | Site-wide      | `useAuth()`                    |
+| Platform admin | Binary (authenticated or not)         | Operator panel | `useAdminAuth()`               |
+| Club member    | `member`, `moderator`, `admin`        | Per-club       | Returned on club API responses |
+
+Key rules:
+
+- **Admin is NOT a user role.** Admin accounts live in a separate table with separate sessions. Never check `user.role === "admin"` for platform admin access.
+- **Moderator IS a user role.** Use `user.role === "moderator"` for content moderation permissions (edit/delete any thread or comment).
+- **Club roles are scoped.** `club.memberRole === "admin"` is a club-level role, unrelated to platform roles.
+- Admin routes are protected by `AdminRoute` component + `useAdminAuth()`, not by user role checks.
+
 ## API client design
 
 ### Typed API client

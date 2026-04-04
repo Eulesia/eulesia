@@ -129,8 +129,9 @@ export function ThreadPage() {
     thread?.source === "minutes_import" || thread?.aiGenerated;
   const isThreadAuthor =
     currentUser?.id === (thread?.authorId ?? thread?.author?.id);
+  const isModerator = currentUser?.role === "moderator";
   const canEditThread = isThreadAuthor || isBotThread;
-  const canDeleteThread = isThreadAuthor;
+  const canDeleteThread = isThreadAuthor || isModerator;
 
   const handleStartEditThread = () => {
     if (!thread) return;

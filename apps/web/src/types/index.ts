@@ -1,7 +1,7 @@
 // Eulesia Type Definitions
 // Based on prototype plan data model
 
-export type UserRole = "citizen" | "institution" | "admin";
+export type UserRole = "citizen" | "institution" | "moderator";
 export type InstitutionType = "municipality" | "agency" | "ministry";
 export type Scope = "local" | "national" | "european";
 

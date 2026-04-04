@@ -43,9 +43,7 @@ pub struct SanctionListParams {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateAppealRequest {
-    pub sanction_id: Option<Uuid>,
-    pub report_id: Option<Uuid>,
-    pub action_id: Option<Uuid>,
+    pub sanction_id: Uuid,
     pub reason: String,
 }
 

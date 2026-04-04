@@ -53,15 +53,16 @@ async fn process_batch(ctx: &WorkerContext) -> Result<(), sea_orm::DbErr> {
                 OutboxRepo::mark_completed(&ctx.db, event.id).await?;
             }
             Err(e) => {
-                warn!(event_id = %event.id, error = %e, "outbox event failed");
+                let msg = e.to_string();
+                warn!(event_id = %event.id, error = %msg, "outbox event failed");
                 if event.attempt_count >= MAX_ATTEMPTS {
                     warn!(event_id = %event.id, "event exceeded max attempts, moving to dead letter");
-                    OutboxRepo::mark_dead(&ctx.db, event.id, &e.to_string()).await?;
+                    OutboxRepo::mark_dead(&ctx.db, event.id, &msg).await?;
                 } else {
                     let backoff = backoff_seconds(event.attempt_count);
                     let next_at =
                         chrono::Utc::now().fixed_offset() + chrono::Duration::seconds(backoff);
-                    OutboxRepo::mark_failed(&ctx.db, event.id, &e.to_string(), next_at).await?;
+                    OutboxRepo::mark_failed(&ctx.db, event.id, &msg, next_at).await?;
                 }
             }
         }
@@ -72,7 +73,7 @@ async fn process_batch(ctx: &WorkerContext) -> Result<(), sea_orm::DbErr> {
 async fn process_event(
     ctx: &WorkerContext,
     event: &eulesia_db::entities::outbox::Model,
-) -> Result<(), sea_orm::DbErr> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match event.event_type.as_str() {
         "session_cleanup" => {
             let deleted = SessionRepo::cleanup_expired(&ctx.db).await?;
@@ -83,13 +84,9 @@ async fn process_event(
         }
         "notification" => {
             if let Some(ref dispatcher) = ctx.dispatcher {
-                if let Ok(notification) =
-                    serde_json::from_value::<NotificationEvent>(event.payload.clone())
-                {
-                    dispatcher.dispatch(&notification).await;
-                } else {
-                    warn!(event_id = %event.id, "failed to deserialize notification payload");
-                }
+                let notification =
+                    serde_json::from_value::<NotificationEvent>(event.payload.clone())?;
+                dispatcher.dispatch(&notification).await?;
             }
             Ok(())
         }
@@ -97,12 +94,8 @@ async fn process_event(
         "thread_created" | "thread_updated" | "thread_deleted" | "user_created"
         | "user_updated" => {
             if let Some(ref sync) = ctx.search_sync {
-                if let Err(e) = sync
-                    .process_event(event.event_type.as_str(), &event.payload)
-                    .await
-                {
-                    warn!(event_id = %event.id, error = %e, "search sync failed");
-                }
+                sync.process_event(event.event_type.as_str(), &event.payload)
+                    .await?;
             }
             Ok(())
         }

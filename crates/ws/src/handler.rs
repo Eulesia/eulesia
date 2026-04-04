@@ -48,7 +48,7 @@ pub async fn ws_upgrade(
 
 async fn handle_socket(socket: WebSocket, connection_id: Uuid, registry: ConnectionRegistry) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<ServerMessage>();
+    let (tx, mut rx) = mpsc::channel::<ServerMessage>(crate::registry::CHANNEL_CAPACITY);
 
     // Generate a unique ID for this specific connection instance so we
     // only unregister ourselves, not a newer replacement connection.

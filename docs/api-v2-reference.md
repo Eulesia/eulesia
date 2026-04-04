@@ -1237,6 +1237,8 @@ Delete a notification.
 
 Register a Web Push subscription.
 
+**Auth**: required
+
 **Request body**:
 
 ```json
@@ -1250,6 +1252,8 @@ Register a Web Push subscription.
 ### DELETE /notifications/push/subscribe
 
 Unsubscribe from Web Push.
+
+**Auth**: required
 
 **Request body**:
 
@@ -1282,7 +1286,7 @@ Meilisearch health check.
 
 WebSocket connection for real-time updates.
 
-**Auth**: session token in query parameter, device_id required
+**Auth**: session token in query parameter (device_id optional — sessions without a bound device use session_id as connection key)
 
 **Server->Client messages** (JSON, tagged by `type`):
 

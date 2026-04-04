@@ -80,11 +80,15 @@ async fn update_my_profile(
     State(state): State<AppState>,
     Json(req): Json<UpdateProfileRequest>,
 ) -> Result<Json<UserProfileResponse>, ApiError> {
-    // Ensure user exists.
-    UserRepo::find_by_id(&state.db, auth.user_id.0)
+    // Ensure user exists and is not soft-deleted.
+    let user = UserRepo::find_by_id(&state.db, auth.user_id.0)
         .await
         .map_err(|e| ApiError::Database(format!("find user: {e}")))?
         .ok_or(ApiError::Unauthorized)?;
+
+    if user.deleted_at.is_some() {
+        return Err(ApiError::Unauthorized);
+    }
 
     let now = chrono::Utc::now().fixed_offset();
 

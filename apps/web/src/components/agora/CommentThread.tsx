@@ -135,10 +135,10 @@ function CommentItem({
   const userVote = comment.userVote || 0;
 
   // Permission checks
-  const isAdmin = currentUserRole === "admin";
+  const isModerator = currentUserRole === "moderator";
   const isAuthor = currentUserId === comment.authorId;
-  const canEditComment = isAdmin || isAuthor;
-  const canDeleteComment = isAdmin || isAuthor;
+  const canEditComment = isModerator || isAuthor;
+  const canDeleteComment = isModerator || isAuthor;
 
   const handleStartEdit = () => {
     setEditContent(comment.content);

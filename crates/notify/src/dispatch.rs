@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::channels;
 use crate::types::NotificationEvent;
@@ -23,13 +23,15 @@ impl NotificationDispatcher {
         }
     }
 
-    pub async fn dispatch(&self, event: &NotificationEvent) {
-        // Channel 1: DB (persistent notification record)
-        if let Err(e) = channels::db::send(&self.db, event).await {
-            error!(error = %e, "failed to persist notification");
-        }
+    pub async fn dispatch(
+        &self,
+        event: &NotificationEvent,
+    ) -> Result<(), crate::error::NotifyError> {
+        // Channel 1: DB (persistent notification record) — must succeed for
+        // the notification to be considered delivered.
+        channels::db::send(&self.db, event).await?;
 
-        // Channel 2: FCM (push to native devices)
+        // Channel 2: FCM (push to native devices) — best-effort
         match DeviceRepo::list_active_for_user(&*self.db, event.user_id).await {
             Ok(devs) => {
                 for dev in devs {
@@ -43,12 +45,12 @@ impl NotificationDispatcher {
             Err(e) => warn!(error = %e, "failed to fetch devices for FCM delivery"),
         }
 
-        // Channel 3: Web Push (browser push)
+        // Channel 3: Web Push (browser push) — best-effort
         let payload = match serde_json::to_string(event) {
             Ok(p) => p,
             Err(e) => {
                 warn!(error = %e, "failed to serialize notification payload");
-                return;
+                return Ok(());
             }
         };
         match PushSubscriptionRepo::list_for_user(&*self.db, event.user_id).await {
@@ -63,5 +65,6 @@ impl NotificationDispatcher {
         }
 
         info!(user_id = %event.user_id, event_type = %event.event_type, "notification dispatched");
+        Ok(())
     }
 }

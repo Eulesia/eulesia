@@ -50,13 +50,8 @@ pub async fn create_appeal(
         return Err(ApiError::BadRequest("reason must not be empty".into()));
     }
 
-    // Require sanction_id
-    let sanction_id = req
-        .sanction_id
-        .ok_or_else(|| ApiError::BadRequest("sanction_id is required for appeals".into()))?;
-
     // Verify sanction belongs to the caller
-    let sanction = SanctionRepo::find_by_id(&state.db, sanction_id)
+    let sanction = SanctionRepo::find_by_id(&state.db, req.sanction_id)
         .await
         .map_err(|e| ApiError::Database(format!("find sanction: {e}")))?
         .ok_or_else(|| ApiError::NotFound("sanction not found".into()))?;
@@ -71,9 +66,9 @@ pub async fn create_appeal(
     let model = eulesia_db::entities::moderation_appeals::ActiveModel {
         id: Set(id),
         user_id: Set(auth.user_id.0),
-        sanction_id: Set(Some(sanction_id)),
-        report_id: Set(req.report_id),
-        action_id: Set(req.action_id),
+        sanction_id: Set(Some(req.sanction_id)),
+        report_id: Set(None),
+        action_id: Set(None),
         reason: Set(req.reason),
         status: Set(AppealStatus::Pending.as_str().to_owned()),
         created_at: Set(now),

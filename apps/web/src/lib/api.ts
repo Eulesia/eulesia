@@ -1348,7 +1348,7 @@ export interface User {
   name: string;
   verifiedName?: string;
   avatarUrl?: string;
-  role: "citizen" | "institution";
+  role: "citizen" | "institution" | "moderator";
   institutionType?: "municipality" | "agency" | "ministry";
   institutionName?: string;
   municipality?: Municipality;
@@ -1478,7 +1478,7 @@ export interface UserSummary {
   name: string;
   avatarUrl?: string;
   canViewProfile?: boolean;
-  role: "citizen" | "institution";
+  role: "citizen" | "institution" | "moderator";
   institutionType?: string;
   institutionName?: string;
   identityVerified?: boolean;
@@ -1938,7 +1938,7 @@ export interface SearchUserResult {
   id: string;
   name: string;
   username: string;
-  role: "citizen" | "institution";
+  role: "citizen" | "institution" | "moderator";
   avatarUrl?: string;
   institutionType?: string;
   institutionName?: string;
@@ -2094,7 +2094,7 @@ export interface AdminUser {
   username: string;
   name: string;
   avatarUrl?: string;
-  role: "citizen" | "institution";
+  role: "citizen" | "institution" | "moderator";
   institutionType?: string;
   institutionName?: string;
   identityVerified: boolean;

@@ -6,7 +6,11 @@ use uuid::Uuid;
 
 use crate::messages::ServerMessage;
 
-pub type WsSender = mpsc::UnboundedSender<ServerMessage>;
+/// Per-connection send buffer. If the client can't keep up, the oldest
+/// messages are dropped rather than growing memory without bound.
+pub(crate) const CHANNEL_CAPACITY: usize = 256;
+
+pub type WsSender = mpsc::Sender<ServerMessage>;
 
 /// An active WebSocket connection with a unique instance ID to guard
 /// against stale cleanup when the same device reconnects.
@@ -49,13 +53,13 @@ impl ConnectionRegistry {
     pub fn send_to_device(&self, device_id: &Uuid, msg: ServerMessage) -> bool {
         self.connections
             .get(device_id)
-            .is_some_and(|conn| conn.sender.send(msg).is_ok())
+            .is_some_and(|conn| conn.sender.try_send(msg).is_ok())
     }
 
     pub fn send_to_user_devices(&self, user_devices: &[Uuid], msg: &ServerMessage) {
         for did in user_devices {
             if let Some(conn) = self.connections.get(did) {
-                let _ = conn.sender.send(msg.clone());
+                let _ = conn.sender.try_send(msg.clone());
             }
         }
     }

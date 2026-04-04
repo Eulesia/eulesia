@@ -47,7 +47,7 @@ interface UserProfile {
   name: string;
   verifiedName?: string;
   avatarUrl?: string;
-  role: "citizen" | "institution" | "admin";
+  role: "citizen" | "institution" | "moderator";
   institutionType?: string;
   institutionName?: string;
   identityVerified: boolean;

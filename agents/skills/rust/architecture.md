@@ -29,6 +29,16 @@ crates/
 - **Hard limit**: 500 lines
 - **Split signal**: When a module has 3+ structs with `impl` blocks
 
+### Auth and role architecture
+
+Three distinct role systems — never conflate them:
+
+- **`UserRole`** (`eulesia_common::types`): `Citizen`, `Institution`, `Moderator`. Closed enum matching the DB CHECK constraint. Use `role.is_moderator()` for permission gates.
+- **Admin accounts**: Separate `admin_accounts` table with dedicated auth. Admin is NOT a `UserRole` variant.
+- **Club member roles**: `member`, `moderator`, `admin` — scoped to club membership, unrelated to `UserRole`.
+
+The only role-based permission gate for platform users is `require_moderator()` in the moderation module.
+
 ### Visibility
 
 Default to private. Escalate only as needed:
