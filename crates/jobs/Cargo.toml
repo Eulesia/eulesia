@@ -8,6 +8,8 @@ workspace = true
 
 [dependencies]
 eulesia-db = { path = "../db" }
+eulesia-notify = { path = "../notify" }
+eulesia-search = { path = "../search" }
 sea-orm = { workspace = true }
 chrono = { workspace = true }
 serde_json = { workspace = true }

@@ -7,11 +7,21 @@ use tracing::{error, info, warn};
 
 use eulesia_db::repo::outbox::OutboxRepo;
 use eulesia_db::repo::sessions::SessionRepo;
+use eulesia_notify::dispatch::NotificationDispatcher;
+use eulesia_notify::types::NotificationEvent;
+use eulesia_search::sync::SearchSync;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_ATTEMPTS: i16 = 5;
 
-pub async fn run(db: Arc<DatabaseConnection>, cancel: CancellationToken) {
+/// Context passed to the outbox worker with optional integrations.
+pub struct WorkerContext {
+    pub db: Arc<DatabaseConnection>,
+    pub dispatcher: Option<Arc<NotificationDispatcher>>,
+    pub search_sync: Option<Arc<SearchSync>>,
+}
+
+pub async fn run(ctx: Arc<WorkerContext>, cancel: CancellationToken) {
     info!("outbox worker started");
 
     loop {
@@ -21,7 +31,7 @@ pub async fn run(db: Arc<DatabaseConnection>, cancel: CancellationToken) {
                 break;
             }
             () = tokio::time::sleep(POLL_INTERVAL) => {
-                if let Err(e) = process_batch(&db).await {
+                if let Err(e) = process_batch(&ctx).await {
                     error!(error = %e, "outbox worker batch failed");
                 }
             }
@@ -29,8 +39,8 @@ pub async fn run(db: Arc<DatabaseConnection>, cancel: CancellationToken) {
     }
 }
 
-async fn process_batch(db: &DatabaseConnection) -> Result<(), sea_orm::DbErr> {
-    let events = OutboxRepo::fetch_pending(db, 50).await?;
+async fn process_batch(ctx: &WorkerContext) -> Result<(), sea_orm::DbErr> {
+    let events = OutboxRepo::fetch_pending(&ctx.db, 50).await?;
     if events.is_empty() {
         return Ok(());
     }
@@ -38,20 +48,20 @@ async fn process_batch(db: &DatabaseConnection) -> Result<(), sea_orm::DbErr> {
     info!(count = events.len(), "processing outbox events");
 
     for event in events {
-        match process_event(db, &event).await {
+        match process_event(ctx, &event).await {
             Ok(()) => {
-                OutboxRepo::mark_completed(db, event.id).await?;
+                OutboxRepo::mark_completed(&ctx.db, event.id).await?;
             }
             Err(e) => {
                 warn!(event_id = %event.id, error = %e, "outbox event failed");
                 if event.attempt_count >= MAX_ATTEMPTS {
                     warn!(event_id = %event.id, "event exceeded max attempts, moving to dead letter");
-                    OutboxRepo::mark_dead(db, event.id, &e.to_string()).await?;
+                    OutboxRepo::mark_dead(&ctx.db, event.id, &e.to_string()).await?;
                 } else {
                     let backoff = backoff_seconds(event.attempt_count);
                     let next_at =
                         chrono::Utc::now().fixed_offset() + chrono::Duration::seconds(backoff);
-                    OutboxRepo::mark_failed(db, event.id, &e.to_string(), next_at).await?;
+                    OutboxRepo::mark_failed(&ctx.db, event.id, &e.to_string(), next_at).await?;
                 }
             }
         }
@@ -60,14 +70,39 @@ async fn process_batch(db: &DatabaseConnection) -> Result<(), sea_orm::DbErr> {
 }
 
 async fn process_event(
-    db: &DatabaseConnection,
+    ctx: &WorkerContext,
     event: &eulesia_db::entities::outbox::Model,
 ) -> Result<(), sea_orm::DbErr> {
     match event.event_type.as_str() {
         "session_cleanup" => {
-            let deleted = SessionRepo::cleanup_expired(db).await?;
+            let deleted = SessionRepo::cleanup_expired(&ctx.db).await?;
             if deleted > 0 {
                 info!(deleted, "cleaned up expired sessions");
+            }
+            Ok(())
+        }
+        "notification" => {
+            if let Some(ref dispatcher) = ctx.dispatcher {
+                if let Ok(notification) =
+                    serde_json::from_value::<NotificationEvent>(event.payload.clone())
+                {
+                    dispatcher.dispatch(&notification).await;
+                } else {
+                    warn!(event_id = %event.id, "failed to deserialize notification payload");
+                }
+            }
+            Ok(())
+        }
+        // Search index sync events
+        "thread_created" | "thread_updated" | "thread_deleted" | "user_created"
+        | "user_updated" => {
+            if let Some(ref sync) = ctx.search_sync {
+                if let Err(e) = sync
+                    .process_event(event.event_type.as_str(), &event.payload)
+                    .await
+                {
+                    warn!(event_id = %event.id, error = %e, "search sync failed");
+                }
             }
             Ok(())
         }

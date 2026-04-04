@@ -8,9 +8,16 @@ use crate::messages::ServerMessage;
 
 pub type WsSender = mpsc::UnboundedSender<ServerMessage>;
 
+/// An active WebSocket connection with a unique instance ID to guard
+/// against stale cleanup when the same device reconnects.
+struct Connection {
+    sender: WsSender,
+    instance_id: Uuid,
+}
+
 #[derive(Clone, Default)]
 pub struct ConnectionRegistry {
-    connections: Arc<DashMap<Uuid, WsSender>>, // keyed by device_id
+    connections: Arc<DashMap<Uuid, Connection>>,
 }
 
 impl ConnectionRegistry {
@@ -20,24 +27,35 @@ impl ConnectionRegistry {
         }
     }
 
-    pub fn register(&self, device_id: Uuid, sender: WsSender) {
-        self.connections.insert(device_id, sender);
+    /// Register a connection. If the device already has a connection,
+    /// the old one is silently replaced (its sender will error on next send).
+    pub fn register(&self, connection_id: Uuid, sender: WsSender, instance_id: Uuid) {
+        self.connections.insert(
+            connection_id,
+            Connection {
+                sender,
+                instance_id,
+            },
+        );
     }
 
-    pub fn unregister(&self, device_id: &Uuid) {
-        self.connections.remove(device_id);
+    /// Unregister only if the stored instance matches. This prevents a
+    /// closing old socket from removing a newer reconnection.
+    pub fn unregister_if_match(&self, connection_id: &Uuid, instance_id: Uuid) {
+        self.connections
+            .remove_if(connection_id, |_, conn| conn.instance_id == instance_id);
     }
 
     pub fn send_to_device(&self, device_id: &Uuid, msg: ServerMessage) -> bool {
         self.connections
             .get(device_id)
-            .is_some_and(|sender| sender.send(msg).is_ok())
+            .is_some_and(|conn| conn.sender.send(msg).is_ok())
     }
 
     pub fn send_to_user_devices(&self, user_devices: &[Uuid], msg: &ServerMessage) {
         for did in user_devices {
-            if let Some(sender) = self.connections.get(did) {
-                let _ = sender.send(msg.clone());
+            if let Some(conn) = self.connections.get(did) {
+                let _ = conn.sender.send(msg.clone());
             }
         }
     }

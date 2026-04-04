@@ -878,6 +878,8 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "eulesia-db",
+ "eulesia-notify",
+ "eulesia-search",
  "sea-orm",
  "serde_json",
  "tokio",
@@ -928,6 +930,7 @@ dependencies = [
  "eulesia-common",
  "eulesia-db",
  "eulesia-jobs",
+ "eulesia-notify",
  "eulesia-search",
  "eulesia-ws",
  "tokio",

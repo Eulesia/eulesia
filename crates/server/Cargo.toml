@@ -16,6 +16,7 @@ eulesia-auth = { path = "../auth" }
 eulesia-common = { path = "../common" }
 eulesia-db = { path = "../db" }
 eulesia-jobs = { path = "../jobs" }
+eulesia-notify = { path = "../notify" }
 eulesia-search = { path = "../search" }
 eulesia-ws = { path = "../ws" }
 anyhow = { workspace = true }

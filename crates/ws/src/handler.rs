@@ -35,23 +35,28 @@ pub async fn ws_upgrade(
 
     match session_result {
         Ok((session, _user)) => {
-            let Some(device_id) = session.device_id else {
-                return (axum::http::StatusCode::BAD_REQUEST, "device_id required").into_response();
-            };
+            // Use device_id if bound, otherwise use session.id as the
+            // connection key. This allows device-less sessions (from
+            // /auth/register, /auth/login) to connect.
+            let connection_id = session.device_id.unwrap_or(session.id);
 
-            ws.on_upgrade(move |socket| handle_socket(socket, device_id, registry))
+            ws.on_upgrade(move |socket| handle_socket(socket, connection_id, registry))
         }
         Err(_) => (axum::http::StatusCode::UNAUTHORIZED, "invalid session").into_response(),
     }
 }
 
-async fn handle_socket(socket: WebSocket, device_id: Uuid, registry: ConnectionRegistry) {
+async fn handle_socket(socket: WebSocket, connection_id: Uuid, registry: ConnectionRegistry) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<ServerMessage>();
 
+    // Generate a unique ID for this specific connection instance so we
+    // only unregister ourselves, not a newer replacement connection.
+    let instance_id = uuid::Uuid::now_v7();
+
     // Register connection
-    registry.register(device_id, tx);
-    info!(device_id = %device_id, "WebSocket connected");
+    registry.register(connection_id, tx, instance_id);
+    info!(connection_id = %connection_id, "WebSocket connected");
 
     // Spawn task to forward server messages to WebSocket
     let send_task = tokio::spawn(async move {
@@ -75,10 +80,10 @@ async fn handle_socket(socket: WebSocket, device_id: Uuid, registry: ConnectionR
                         }
                         ClientMessage::TypingStart { conversation_id } => {
                             // TODO: broadcast typing indicator to conversation members
-                            info!(device_id = %device_id, conversation_id = %conversation_id, "typing start");
+                            info!(connection_id = %connection_id, conversation_id = %conversation_id, "typing start");
                         }
                         ClientMessage::TypingStop { conversation_id } => {
-                            info!(device_id = %device_id, conversation_id = %conversation_id, "typing stop");
+                            info!(connection_id = %connection_id, conversation_id = %conversation_id, "typing stop");
                         }
                     }
                 }
@@ -88,8 +93,9 @@ async fn handle_socket(socket: WebSocket, device_id: Uuid, registry: ConnectionR
         }
     }
 
-    // Cleanup
-    registry.unregister(&device_id);
+    // Cleanup — only unregister if our instance is still the active one.
+    // This prevents a closing old socket from removing a newer reconnection.
+    registry.unregister_if_match(&connection_id, instance_id);
     send_task.abort();
-    info!(device_id = %device_id, "WebSocket disconnected");
+    info!(connection_id = %connection_id, "WebSocket disconnected");
 }

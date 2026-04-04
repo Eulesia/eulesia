@@ -36,20 +36,26 @@ async fn main() -> anyhow::Result<()> {
         frontend_origin: config.frontend_origin.clone(),
     };
 
-    // Optionally create Meilisearch search client
-    let search_client = config.meili_url.as_deref().map(|url| {
+    // Optionally create Meilisearch search client and configure indexes
+    let search_client = if let Some(ref url) = config.meili_url {
         let client =
             eulesia_search::client::SearchClient::new(url, config.meili_api_key.as_deref());
         info!("Meilisearch client configured at {url}");
-        Arc::new(client)
-    });
+
+        // Ensure indexes exist with correct settings
+        eulesia_search::indexes::ensure_indexes(client.inner()).await;
+
+        Some(Arc::new(client))
+    } else {
+        None
+    };
 
     let ws_registry = eulesia_ws::registry::ConnectionRegistry::new();
 
     let state = AppState {
         db: Arc::clone(&db),
         config: Arc::new(app_config),
-        search_client,
+        search_client: search_client.clone(),
         ws_registry,
     };
 
@@ -68,12 +74,24 @@ async fn main() -> anyhow::Result<()> {
         .layer(cors)
         .layer(TraceLayer::new_for_http());
 
+    // Build outbox worker context with optional integrations
+    let dispatcher = Arc::new(eulesia_notify::dispatch::NotificationDispatcher::new(
+        Arc::clone(&db),
+    ));
+    let search_sync = search_client
+        .as_ref()
+        .map(|c| Arc::new(eulesia_search::sync::SearchSync::new(c.inner().clone())));
+    let worker_ctx = Arc::new(eulesia_jobs::outbox_worker::WorkerContext {
+        db: Arc::clone(&db),
+        dispatcher: Some(dispatcher),
+        search_sync,
+    });
+
     // Spawn outbox worker
     let cancel = CancellationToken::new();
     let worker_cancel = cancel.clone();
-    let worker_db = Arc::clone(&db);
     tokio::spawn(async move {
-        eulesia_jobs::outbox_worker::run(worker_db, worker_cancel).await;
+        eulesia_jobs::outbox_worker::run(worker_ctx, worker_cancel).await;
     });
 
     let addr = config.bind_addr();
