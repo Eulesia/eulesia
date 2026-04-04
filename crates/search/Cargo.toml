@@ -1,0 +1,17 @@
+[package]
+name = "eulesia-search"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+eulesia-db = { path = "../db" }
+meilisearch-sdk = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }

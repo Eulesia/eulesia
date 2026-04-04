@@ -36,9 +36,21 @@ async fn main() -> anyhow::Result<()> {
         frontend_origin: config.frontend_origin.clone(),
     };
 
+    // Optionally create Meilisearch search client
+    let search_client = config.meili_url.as_deref().map(|url| {
+        let client =
+            eulesia_search::client::SearchClient::new(url, config.meili_api_key.as_deref());
+        info!("Meilisearch client configured at {url}");
+        Arc::new(client)
+    });
+
+    let ws_registry = eulesia_ws::registry::ConnectionRegistry::new();
+
     let state = AppState {
         db: Arc::clone(&db),
         config: Arc::new(app_config),
+        search_client,
+        ws_registry,
     };
 
     let cors = CorsLayer::new()

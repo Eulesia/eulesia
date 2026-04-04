@@ -42,6 +42,14 @@ pub struct Config {
     /// Session max age in days
     #[arg(long, env = "EULESIA_SESSION_MAX_AGE_DAYS", default_value_t = 30)]
     pub session_max_age_days: u32,
+
+    /// Meilisearch URL (optional, disables search if unset)
+    #[arg(long, env = "MEILI_URL")]
+    pub meili_url: Option<String>,
+
+    /// Meilisearch API key (optional)
+    #[arg(long, env = "MEILI_API_KEY")]
+    pub meili_api_key: Option<String>,
 }
 
 impl Config {

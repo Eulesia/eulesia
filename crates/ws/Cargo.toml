@@ -1,0 +1,21 @@
+[package]
+name = "eulesia-ws"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+eulesia-auth = { path = "../auth" }
+eulesia-common = { path = "../common" }
+eulesia-db = { path = "../db" }
+axum = { workspace = true, features = ["ws"] }
+dashmap = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+futures-util = "0.3"

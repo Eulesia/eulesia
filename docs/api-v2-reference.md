@@ -1068,3 +1068,231 @@ Delivered entries are garbage-collected periodically.
   "acknowledged": 2
 }
 ```
+
+---
+
+## Moderation
+
+### POST /moderation/reports
+
+Submit a content report.
+
+**Auth**: required
+
+**Request body**:
+
+```json
+{
+  "content_type": "thread|comment",
+  "content_id": "uuid",
+  "reason": "illegal|harassment|spam|misinformation|other",
+  "description": "optional details"
+}
+```
+
+### GET /moderation/reports
+
+List reports. Moderator only.
+
+**Auth**: required (moderator)
+**Query**: `status` (optional: pending|reviewing|resolved|dismissed), `offset`, `limit`
+
+### GET /moderation/reports/{id}
+
+Report detail. Moderator only.
+
+### PATCH /moderation/reports/{id}
+
+Update report status or assign moderator.
+
+**Auth**: required (moderator)
+
+**Request body**:
+
+```json
+{
+  "status": "reviewing|resolved|dismissed",
+  "assigned_to": "uuid (optional)"
+}
+```
+
+### POST /moderation/sanctions
+
+Issue a sanction. Moderator only.
+
+**Auth**: required (moderator)
+
+**Request body**:
+
+```json
+{
+  "user_id": "uuid",
+  "sanction_type": "warning|suspension|ban",
+  "reason": "optional",
+  "expires_at": "ISO 8601 (optional)"
+}
+```
+
+### GET /moderation/sanctions
+
+List all sanctions. Moderator only.
+
+### GET /moderation/sanctions/user/{user_id}
+
+Active sanctions for a user. Moderator only.
+
+### PATCH /moderation/sanctions/{id}/revoke
+
+Revoke a sanction. Moderator only.
+
+### POST /moderation/appeals
+
+Submit an appeal against a sanction.
+
+**Auth**: required
+
+**Request body**:
+
+```json
+{
+  "sanction_id": "uuid",
+  "reason": "appeal justification"
+}
+```
+
+### GET /moderation/appeals
+
+List appeals. Moderator only.
+
+### PATCH /moderation/appeals/{id}/respond
+
+Respond to an appeal. Moderator only.
+
+**Request body**:
+
+```json
+{
+  "status": "accepted|rejected",
+  "admin_response": "response text"
+}
+```
+
+---
+
+## User Profiles
+
+### GET /users/{id}
+
+Public user profile.
+
+**Auth**: optional
+
+### PATCH /users/me
+
+Update own profile.
+
+**Auth**: required
+
+**Request body**:
+
+```json
+{
+  "name": "optional",
+  "bio": "optional",
+  "avatar_url": "optional",
+  "locale": "optional"
+}
+```
+
+---
+
+## Notifications
+
+### GET /notifications
+
+List user's notifications (paginated, newest first).
+
+**Auth**: required
+**Query**: `offset`, `limit`
+
+### GET /notifications/unread-count
+
+Count of unread notifications.
+
+**Auth**: required
+
+### POST /notifications/{id}/read
+
+Mark single notification as read.
+
+### POST /notifications/read-all
+
+Mark all notifications as read.
+
+### DELETE /notifications/{id}
+
+Delete a notification.
+
+### POST /notifications/push/subscribe
+
+Register a Web Push subscription.
+
+**Request body**:
+
+```json
+{
+  "endpoint": "push endpoint URL",
+  "p256dh": "ECDH public key",
+  "auth": "auth secret"
+}
+```
+
+### DELETE /notifications/push/subscribe
+
+Unsubscribe from Web Push.
+
+**Request body**:
+
+```json
+{
+  "endpoint": "push endpoint URL"
+}
+```
+
+---
+
+## Search
+
+### GET /search
+
+Federated search across threads and users.
+
+**Auth**: optional
+**Query**: `q` (required), `type` (optional: threads|users), `limit`
+
+### GET /search/health
+
+Meilisearch health check.
+
+---
+
+## WebSocket
+
+### WSS /ws/v2?token=<session_token>
+
+WebSocket connection for real-time updates.
+
+**Auth**: session token in query parameter, device_id required
+
+**Server->Client messages** (JSON, tagged by `type`):
+
+- `new_message` -- E2EE message envelope
+- `notification` -- notification event
+- `typing` -- typing indicator
+- `presence` -- online/offline status
+
+**Client->Server messages**:
+
+- `typing_start` -- `{ "type": "typing_start", "conversation_id": "uuid" }`
+- `typing_stop` -- `{ "type": "typing_stop", "conversation_id": "uuid" }`
+- `ping` -- keepalive

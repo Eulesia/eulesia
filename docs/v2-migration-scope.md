@@ -10,15 +10,15 @@ the transition works.
 These domains have v2 schema and entity models. The Rust server handles
 them natively once the API handlers are implemented.
 
-| Domain          | v1 (Node/Express)                                         | v2 (Rust/axum)                                                                           | Status      |
-| --------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------- |
-| Auth & identity | Cookie sessions, magic links, Argon2, FTN/EUDI OIDC       | `users`, `devices`, `sessions` + E2EE device key management                              | API done    |
-| Messaging       | Plaintext `directMessages` table                          | Server-blind E2EE via `conversations`, `memberships`, `messages`, `message_device_queue` | API done    |
-| Social graph    | Follows (blocks/mutes tables exist unused)                | `follows`, `blocks`, `mutes` with full FK enforcement                                    | API done    |
-| Public content  | `threads`, `comments`, votes, tags, bookmarks (12 tables) | Same tables, unified schema (no club/room duplication)                                   | API done    |
-| Moderation/DSA  | Reports, actions, sanctions, appeals                      | Same structure, FK-enforced audit trail                                                  | Schema done |
-| Geo             | `municipalities`, `locations`, `places`                   | Same structure                                                                           | Schema done |
-| Notifications   | 4-channel fire-and-forget from request handlers           | Outbox-driven async delivery with retry semantics                                        | Schema done |
+| Domain          | v1 (Node/Express)                                         | v2 (Rust/axum)                                                                           | Status   |
+| --------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------- |
+| Auth & identity | Cookie sessions, magic links, Argon2, FTN/EUDI OIDC       | `users`, `devices`, `sessions` + E2EE device key management                              | API done |
+| Messaging       | Plaintext `directMessages` table                          | Server-blind E2EE via `conversations`, `memberships`, `messages`, `message_device_queue` | API done |
+| Social graph    | Follows (blocks/mutes tables exist unused)                | `follows`, `blocks`, `mutes` with full FK enforcement                                    | API done |
+| Public content  | `threads`, `comments`, votes, tags, bookmarks (12 tables) | Same tables, unified schema (no club/room duplication)                                   | API done |
+| Moderation/DSA  | Reports, actions, sanctions, appeals                      | Same structure, FK-enforced audit trail                                                  | API done |
+| Geo             | `municipalities`, `locations`, `places`                   | Same structure                                                                           | API done |
+| Notifications   | 4-channel fire-and-forget from request handlers           | Outbox-driven async delivery with retry semantics                                        | API done |
 
 ### Phase 2 — Features to absorb
 

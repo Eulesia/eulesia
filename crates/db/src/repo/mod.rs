@@ -1,3 +1,4 @@
+pub mod appeals;
 pub mod blocks;
 pub mod bookmarks;
 pub mod comments;
@@ -7,9 +8,14 @@ pub mod epochs;
 pub mod follows;
 pub mod memberships;
 pub mod messages;
+pub mod moderation_actions_repo;
 pub mod mutes;
+pub mod notifications;
 pub mod outbox;
 pub mod pre_keys;
+pub mod push_subscriptions;
+pub mod reports;
+pub mod sanctions;
 pub mod sessions;
 pub mod tags;
 pub mod thread_views;
@@ -53,3 +59,16 @@ mod threads_test;
 mod users_test;
 #[cfg(test)]
 mod votes_test;
+
+#[cfg(test)]
+mod appeals_test;
+#[cfg(test)]
+mod moderation_actions_test;
+#[cfg(test)]
+mod notifications_test;
+#[cfg(test)]
+mod push_subscriptions_test;
+#[cfg(test)]
+mod reports_test;
+#[cfg(test)]
+mod sanctions_test;
