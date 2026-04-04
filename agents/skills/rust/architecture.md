@@ -158,6 +158,76 @@ UserRepo::find_by_id(db, id)
     .map_err(|e| AuthError::Database { context: "find user", source: e })?;
 ```
 
+## Handler / service separation
+
+Handlers should be thin — parse, authenticate, delegate, respond. Domain
+logic belongs in a service layer.
+
+**Symptoms of a fat handler:**
+
+- Handler owns transaction management, domain branching, and persistence
+- Handler exceeds ~50 lines
+- `#[allow(clippy::too_many_lines)]` needed
+- Same response type built in multiple branches
+
+**Target shape:**
+
+```rust
+// Handler: thin
+pub async fn send(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SendMessageRequest>,
+) -> Result<Json<MessageResponse>, ApiError> {
+    let cmd = SendCommand::new(auth, id, req)?;
+    let msg = MessageService::send(&state.db, cmd).await?;
+    Ok(Json(MessageResponse::from(msg)))
+}
+
+// Service: owns domain logic + transactions
+pub struct MessageService;
+impl MessageService {
+    pub async fn send(db: &DatabaseConnection, cmd: SendCommand) -> Result<SentMessage, SendError> {
+        let txn = db.begin().await?;
+        // lock, verify, branch, persist, commit
+        txn.commit().await?;
+        Ok(result)
+    }
+}
+```
+
+**When to extract:**
+
+- Handler has multiple branches sharing persistence logic
+- Same handler does auth + validation + domain logic + persistence
+- Transaction spans more than one logical operation
+
+### Transaction scope discipline
+
+Lock only what you need, read authoritatively inside the lock:
+
+```rust
+// BAD: read outside txn, use inside
+let conv = ConversationRepo::find_by_id(&db, id).await?;  // stale
+let txn = db.begin().await?;
+// conv.current_epoch may be wrong by now
+
+// GOOD: single authoritative read inside lock
+let txn = db.begin().await?;
+let (conv_type, epoch) = txn.query_one(
+    "SELECT type, current_epoch FROM conversations WHERE id = $1 FOR UPDATE", [id]
+).await?;
+// conv_type and epoch are guaranteed consistent
+```
+
+**Rules:**
+
+- If you read a value before the transaction and use it inside, ask: can
+  this value change between the read and the commit?
+- Membership checks must happen inside the lock (TOCTOU prevention)
+- Minimize work under the lock — compute fanout plans, then persist
+
 ## Trait design
 
 ### When to use traits

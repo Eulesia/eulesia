@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::AppState;
 use eulesia_auth::session::AuthUser;
 use eulesia_common::error::ApiError;
-use eulesia_common::types::{GroupRole, new_id};
+use eulesia_common::types::{ConversationType, GroupRole, new_id};
 use eulesia_db::entities::{
     conversation_epochs, conversations, direct_conversations, membership_events, memberships,
 };
@@ -68,11 +68,11 @@ pub async fn create(
 ) -> Result<Json<ConversationResponse>, ApiError> {
     let caller = auth.user_id.0;
 
-    match req.conversation_type.as_str() {
-        "direct" => create_direct(caller, &state, &req).await,
-        "group" => create_group(caller, &state, &req).await,
-        _ => Err(ApiError::BadRequest(
-            "conversation_type must be 'direct' or 'group'".into(),
+    match req.conversation_type {
+        ConversationType::Direct => create_direct(caller, &state, &req).await,
+        ConversationType::Group => create_group(caller, &state, &req).await,
+        ConversationType::Channel => Err(ApiError::BadRequest(
+            "channel conversations are not yet supported".into(),
         )),
     }
 }
@@ -533,7 +533,12 @@ pub async fn update(
         .map_err(db_err)?
         .ok_or_else(|| ApiError::NotFound("conversation not found".into()))?;
 
-    if conv.r#type != "group" {
+    let conv_type = conv
+        .r#type
+        .parse::<ConversationType>()
+        .map_err(ApiError::Internal)?;
+
+    if conv_type != ConversationType::Group {
         return Err(ApiError::BadRequest(
             "only group conversations can be updated".into(),
         ));

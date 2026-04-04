@@ -134,6 +134,31 @@ let user = sqlx::query("...")
 // GOOD: explicit map_err with context at every call site.
 ```
 
+### Fat handler (domain logic in HTTP layer)
+
+Handler should parse, authenticate, delegate, respond. If it owns
+transactions, domain branching, and persistence, extract a service.
+See `architecture.md` → "Handler / service separation".
+
+### Stringly-typed domain branching
+
+```rust
+// BAD: string comparison for core domain state
+if conv.r#type == "direct" { ... }
+
+// GOOD: enum at the domain layer
+match conv.conversation_type {
+    ConversationType::Direct => ...,
+    ConversationType::Group => ...,
+}
+```
+
+### Silent ciphertext fallback
+
+In E2EE systems, never silently serve ciphertext encrypted for a
+different device. If the requesting device has no entry, return an
+explicit error or empty field — not someone else's ciphertext.
+
 ### `async` for CPU-bound work
 
 ```rust

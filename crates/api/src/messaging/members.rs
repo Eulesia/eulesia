@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::AppState;
 use eulesia_auth::session::AuthUser;
 use eulesia_common::error::ApiError;
-use eulesia_common::types::{GroupRole, new_id};
+use eulesia_common::types::{ConversationType, GroupRole, new_id};
 use eulesia_db::entities::{conversation_epochs, membership_events, memberships};
 use eulesia_db::repo::conversations::ConversationRepo;
 use eulesia_db::repo::epochs::EpochRepo;
@@ -39,7 +39,12 @@ pub async fn invite(
         .map_err(db_err)?
         .ok_or_else(|| ApiError::NotFound("conversation not found".into()))?;
 
-    if conv.r#type != "group" {
+    let conv_type = conv
+        .r#type
+        .parse::<ConversationType>()
+        .map_err(ApiError::Internal)?;
+
+    if conv_type != ConversationType::Group {
         return Err(ApiError::BadRequest(
             "can only invite members to group conversations".into(),
         ));

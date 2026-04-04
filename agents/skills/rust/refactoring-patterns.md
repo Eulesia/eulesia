@@ -147,6 +147,71 @@ pub struct GroupId(pub Id);
 groups: HashMap<GroupId, Group>,
 ```
 
+## Pattern 7: Extract fat handler into service + prepared plan
+
+### Symptom
+
+An HTTP handler owns transaction management, domain branching, persistence,
+and response mapping. It needs `#[allow(clippy::too_many_lines)]`. Two code
+paths (e.g., DM vs group) duplicate structure.
+
+### Technique
+
+1. Define a command struct for the handler's input
+2. Define a prepared plan struct for the domain output
+3. Move domain logic into a service function that returns the plan
+4. Keep the handler thin: parse → command → service → response
+
+```rust
+// BEFORE: 200+ line handler
+pub async fn send(auth: AuthUser, State(state): State<AppState>, ...) -> Result<Json<...>> {
+    // validation, txn, branch DM/group, persist, fanout, commit, response
+}
+
+// AFTER: thin handler + service
+struct SendCommand { caller: Uuid, device_id: Uuid, conversation_id: Uuid, req: SendMessageRequest }
+
+struct PreparedSend {
+    stored_ciphertext: Vec<u8>,
+    queue_entries: Vec<message_device_queue::ActiveModel>,
+    message: messages::Model,
+}
+
+impl MessageService {
+    async fn send(db: &DatabaseConnection, cmd: SendCommand) -> Result<PreparedSend, SendError> {
+        let txn = db.begin().await?;
+        let (conv_type, epoch) = lock_conversation(&txn, cmd.conversation_id).await?;
+        verify_membership(&txn, cmd.conversation_id, cmd.caller).await?;
+
+        let prepared = match conv_type {
+            ConversationType::Direct => prepare_direct(&txn, &cmd).await?,
+            ConversationType::Group => prepare_group(&txn, &cmd).await?,
+        };
+
+        persist_message(&txn, &prepared).await?;
+        txn.commit().await?;
+        Ok(prepared)
+    }
+}
+
+pub async fn send(auth: AuthUser, ...) -> Result<Json<MessageResponse>> {
+    let cmd = SendCommand::from_auth(auth, conversation_id, req)?;
+    let result = MessageService::send(&state.db, cmd).await?;
+    Ok(Json(MessageResponse::from(result)))
+}
+```
+
+### When duplication signals this pattern
+
+If two branches share:
+
+- the same persistence path (insert row + insert queue entries)
+- the same response mapping
+- the same transaction/commit flow
+
+Then the branching should produce a **plan**, and the persistence should
+consume it uniformly.
+
 ## General refactoring heuristics
 
 - **Extract when a function exceeds 40 lines** (hard limit: 60)

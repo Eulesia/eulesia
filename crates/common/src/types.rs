@@ -307,6 +307,94 @@ impl std::str::FromStr for GroupRole {
 }
 
 // ---------------------------------------------------------------------------
+// ConversationType enum
+// ---------------------------------------------------------------------------
+
+/// Conversation type — closed set matching the DB CHECK constraint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConversationType {
+    Direct,
+    Group,
+    Channel,
+}
+
+impl ConversationType {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Group => "group",
+            Self::Channel => "channel",
+        }
+    }
+}
+
+impl std::fmt::Display for ConversationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ConversationType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "direct" => Ok(Self::Direct),
+            "group" => Ok(Self::Group),
+            "channel" => Ok(Self::Channel),
+            other => Err(format!("invalid conversation type: {other}")),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MessageType enum
+// ---------------------------------------------------------------------------
+
+/// Message type — closed set matching the DB CHECK constraint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MessageType {
+    Text,
+    Media,
+    System,
+    Reaction,
+    Redaction,
+}
+
+impl MessageType {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Media => "media",
+            Self::System => "system",
+            Self::Reaction => "reaction",
+            Self::Redaction => "redaction",
+        }
+    }
+}
+
+impl std::fmt::Display for MessageType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for MessageType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "text" => Ok(Self::Text),
+            "media" => Ok(Self::Media),
+            "system" => Ok(Self::System),
+            "reaction" => Ok(Self::Reaction),
+            "redaction" => Ok(Self::Redaction),
+            other => Err(format!("invalid message type: {other}")),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Moderation enums
 // ---------------------------------------------------------------------------
 
