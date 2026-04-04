@@ -6,11 +6,19 @@
 /fix [pr-number]
 ```
 
+## Scope
+
+This skill is strictly for fixing **CI/build failures** — format errors,
+lint errors, type errors, test failures, Nix build failures. It is NOT
+for general bug fixing or addressing review feedback (use `/resolve` for
+review comments).
+
 ## Context Detection
 
-- Triggered after CI failures that are not obvious formatting or import issues
+- Triggered after CI failures (GitHub Actions, local `just ci-check`)
 - Input: optional PR number to fetch CI logs from; otherwise uses local check output
-- Requires: failing checks or a known failure to investigate
+- Requires: a failing check or build to investigate
+- If there are no failures, report that and stop
 
 ## Workflow
 
@@ -22,7 +30,11 @@
    gh run view <run-id> --repo Eulesia/eulesia --log-failed
    ```
 
-   Or use local output from the last `/check` run.
+   Or run locally:
+
+   ```bash
+   just ci-check
+   ```
 
    For **Nix build/check failures**, use nix-mcp to extract errors:
 
@@ -32,7 +44,7 @@
    mcp__nix-mcp__get_log(log_id="<id>", grep="error") # search large logs
    ```
 
-2. **Enter plan mode.** Analyze failures before making any changes.
+2. **Analyze failures before making changes.**
    - Parse all error messages and warnings
    - Group failures into clusters by root cause
    - Identify dependency chains (e.g., a type error causing downstream test failures)
@@ -55,7 +67,7 @@
 6. **Push if green.**
 
    ```bash
-   git add -A && git commit -m "<fix-description>"
+   git add <files> && git commit -m "<fix-description>"
    git push
    ```
 
@@ -65,11 +77,13 @@
 
 | Signal                                  | Action                                         |
 | --------------------------------------- | ---------------------------------------------- |
+| No failures found                       | Report clean status and stop                   |
 | Single root cause, obvious fix          | Apply and verify                               |
 | Multiple independent failures           | Fix in priority order (types > tests > lint)   |
 | Failure in generated code or migrations | Check schema source, regenerate                |
 | Flaky test                              | Identify flakiness, fix or mark as known-flaky |
 | Unfamiliar failure domain               | Research before fixing, read related code      |
+| Failure is from review feedback, not CI | Tell user to use `/resolve` instead            |
 
 ## Output Format
 
