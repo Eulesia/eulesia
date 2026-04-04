@@ -2,11 +2,10 @@ import { useState, useEffect } from "react";
 import {
   Shield,
   Fingerprint,
-  CheckCircle,
   Clock,
   Lock,
-  Users,
-  Building2,
+  MapPin,
+  MessageSquare,
   UserPlus,
   LogIn,
   ArrowRight,
@@ -190,15 +189,15 @@ export function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-900 to-blue-800 flex flex-col">
       <SEOHead
-        title="Eulesia – Kansalaisdemokratia-alusta"
-        description="Eulesia on eurooppalainen kansalaisdemokratia-alusta. Kirjaudu sisään tai rekisteröidy osallistuaksesi kansalaiskeskusteluun."
+        title="Eulesia – Eurooppalainen sosiaalinen media"
+        description="Eulesia on avoin eurooppalainen sosiaalinen media. Tilaa ajatuksille, tilaa keskusteluille, tilaa ihmisyydelle."
         path="/"
         jsonLd={{
           "@context": "https://schema.org",
           "@type": "WebSite",
           name: "Eulesia",
           url: "https://eulesia.org",
-          description: "Eurooppalainen kansalaisdemokratia-alusta",
+          description: "Avoin eurooppalainen sosiaalinen media",
         }}
       />
       {/* Header */}
@@ -665,42 +664,42 @@ export function LoginPage() {
           <div className="space-y-4">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <CheckCircle className="w-4 h-4 text-green-700" />
+                <Fingerprint className="w-4 h-4 text-green-700" />
               </div>
               <div>
                 <h4 className="font-medium text-gray-900 dark:text-gray-100 text-sm">
-                  {t("features.noAttentionEconomy.title")}
+                  {t("features.realPeople.title")}
                 </h4>
                 <p className="text-gray-500 dark:text-gray-400 text-sm">
-                  {t("features.noAttentionEconomy.description")}
+                  {t("features.realPeople.description")}
                 </p>
               </div>
             </div>
 
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Building2 className="w-4 h-4 text-violet-700" />
+                <MapPin className="w-4 h-4 text-violet-700" />
               </div>
               <div>
                 <h4 className="font-medium text-gray-900 dark:text-gray-100 text-sm">
-                  {t("features.institutions.title")}
+                  {t("features.proximity.title")}
                 </h4>
                 <p className="text-gray-500 dark:text-gray-400 text-sm">
-                  {t("features.institutions.description")}
+                  {t("features.proximity.description")}
                 </p>
               </div>
             </div>
 
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Users className="w-4 h-4 text-teal-700" />
+                <MessageSquare className="w-4 h-4 text-teal-700" />
               </div>
               <div>
                 <h4 className="font-medium text-gray-900 dark:text-gray-100 text-sm">
-                  {t("features.socialNotSurveillance.title")}
+                  {t("features.realDiscussion.title")}
                 </h4>
                 <p className="text-gray-500 dark:text-gray-400 text-sm">
-                  {t("features.socialNotSurveillance.description")}
+                  {t("features.realDiscussion.description")}
                 </p>
               </div>
             </div>
