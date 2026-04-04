@@ -87,7 +87,7 @@ async fn list_notifications(
 
     let (items, total) = NotificationRepo::list_for_user(&state.db, auth.user_id.0, offset, limit)
         .await
-        .map_err(|e| ApiError::Database(e.to_string()))?;
+        .map_err(|e| ApiError::Database(format!("list notifications: {e}")))?;
 
     let data = items.into_iter().map(NotificationResponse::from).collect();
     Ok(Json(NotificationListResponse { data, total }))
@@ -99,7 +99,7 @@ async fn unread_count(
 ) -> Result<Json<UnreadCountResponse>, ApiError> {
     let count = NotificationRepo::unread_count(&state.db, auth.user_id.0)
         .await
-        .map_err(|e| ApiError::Database(e.to_string()))?;
+        .map_err(|e| ApiError::Database(format!("count unread notifications: {e}")))?;
     Ok(Json(UnreadCountResponse { count }))
 }
 
@@ -110,7 +110,7 @@ async fn mark_read(
 ) -> Result<(), ApiError> {
     NotificationRepo::mark_read(&state.db, id, auth.user_id.0)
         .await
-        .map_err(|e| ApiError::Database(e.to_string()))?;
+        .map_err(|e| ApiError::Database(format!("mark notification read: {e}")))?;
     Ok(())
 }
 
@@ -120,7 +120,7 @@ async fn mark_all_read(
 ) -> Result<Json<MarkAllReadResponse>, ApiError> {
     let updated = NotificationRepo::mark_all_read(&state.db, auth.user_id.0)
         .await
-        .map_err(|e| ApiError::Database(e.to_string()))?;
+        .map_err(|e| ApiError::Database(format!("mark all notifications read: {e}")))?;
     Ok(Json(MarkAllReadResponse { updated }))
 }
 
@@ -131,7 +131,7 @@ async fn delete_notification(
 ) -> Result<(), ApiError> {
     NotificationRepo::delete(&state.db, id, auth.user_id.0)
         .await
-        .map_err(|e| ApiError::Database(e.to_string()))?;
+        .map_err(|e| ApiError::Database(format!("delete notification: {e}")))?;
     Ok(())
 }
 
@@ -159,7 +159,7 @@ async fn push_subscribe(
         },
     )
     .await
-    .map_err(|e| ApiError::Database(e.to_string()))?;
+    .map_err(|e| ApiError::Database(format!("create push subscription: {e}")))?;
     Ok(())
 }
 
@@ -170,7 +170,7 @@ async fn push_unsubscribe(
 ) -> Result<(), ApiError> {
     PushSubscriptionRepo::delete_by_endpoint(&state.db, auth.user_id.0, &req.endpoint)
         .await
-        .map_err(|e| ApiError::Database(e.to_string()))?;
+        .map_err(|e| ApiError::Database(format!("delete push subscription: {e}")))?;
     Ok(())
 }
 

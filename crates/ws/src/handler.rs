@@ -61,9 +61,14 @@ async fn handle_socket(socket: WebSocket, connection_id: Uuid, registry: Connect
     // Spawn task to forward server messages to WebSocket
     let send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
-            if let Ok(text) = serde_json::to_string(&msg) {
-                if ws_sender.send(Message::Text(text.into())).await.is_err() {
-                    break;
+            match serde_json::to_string(&msg) {
+                Ok(text) => {
+                    if ws_sender.send(Message::Text(text.into())).await.is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to serialize WS message");
                 }
             }
         }

@@ -35,11 +35,6 @@ fn sanction_to_response(s: eulesia_db::entities::user_sanctions::Model) -> Sanct
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn db_err(e: sea_orm::DbErr) -> ApiError {
-    ApiError::Database(e.to_string())
-}
-
 /// POST /moderation/sanctions — moderator-only.
 pub async fn create_sanction(
     auth: AuthUser,
@@ -73,7 +68,7 @@ pub async fn create_sanction(
 
     let sanction = SanctionRepo::create(&state.db, model)
         .await
-        .map_err(db_err)?;
+        .map_err(|e| ApiError::Database(format!("create sanction: {e}")))?;
     Ok(Json(sanction_to_response(sanction)))
 }
 
@@ -90,7 +85,7 @@ pub async fn list_sanctions(
 
     let (items, total) = SanctionRepo::list(&state.db, offset, limit)
         .await
-        .map_err(db_err)?;
+        .map_err(|e| ApiError::Database(format!("list sanctions: {e}")))?;
 
     let data = items.into_iter().map(sanction_to_response).collect();
 
@@ -112,16 +107,16 @@ pub async fn revoke_sanction(
 
     SanctionRepo::find_by_id(&state.db, id)
         .await
-        .map_err(db_err)?
+        .map_err(|e| ApiError::Database(format!("find sanction: {e}")))?
         .ok_or_else(|| ApiError::NotFound("sanction not found".into()))?;
 
     SanctionRepo::revoke(&state.db, id, auth.user_id.0)
         .await
-        .map_err(db_err)?;
+        .map_err(|e| ApiError::Database(format!("revoke sanction: {e}")))?;
 
     let updated = SanctionRepo::find_by_id(&state.db, id)
         .await
-        .map_err(db_err)?
+        .map_err(|e| ApiError::Database(format!("find sanction: {e}")))?
         .ok_or_else(|| ApiError::NotFound("sanction not found".into()))?;
 
     Ok(Json(sanction_to_response(updated)))
@@ -137,7 +132,7 @@ pub async fn user_sanctions(
 
     let items = SanctionRepo::active_for_user(&state.db, user_id)
         .await
-        .map_err(db_err)?;
+        .map_err(|e| ApiError::Database(format!("list active sanctions for user: {e}")))?;
 
     let data = items.into_iter().map(sanction_to_response).collect();
     Ok(Json(data))

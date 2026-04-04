@@ -37,11 +37,6 @@ fn appeal_to_response(a: eulesia_db::entities::moderation_appeals::Model) -> App
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn db_err(e: sea_orm::DbErr) -> ApiError {
-    ApiError::Database(e.to_string())
-}
-
 /// POST /moderation/appeals — any authenticated user can file an appeal.
 pub async fn create_appeal(
     auth: AuthUser,
@@ -67,7 +62,9 @@ pub async fn create_appeal(
         ..Default::default()
     };
 
-    let appeal = AppealRepo::create(&state.db, model).await.map_err(db_err)?;
+    let appeal = AppealRepo::create(&state.db, model)
+        .await
+        .map_err(|e| ApiError::Database(format!("create appeal: {e}")))?;
     Ok(Json(appeal_to_response(appeal)))
 }
 
@@ -84,7 +81,7 @@ pub async fn list_appeals(
 
     let (items, total) = AppealRepo::list(&state.db, params.status.as_deref(), offset, limit)
         .await
-        .map_err(db_err)?;
+        .map_err(|e| ApiError::Database(format!("list appeals: {e}")))?;
 
     let data = items.into_iter().map(appeal_to_response).collect();
 
@@ -107,7 +104,7 @@ pub async fn respond_appeal(
 
     AppealRepo::find_by_id(&state.db, id)
         .await
-        .map_err(db_err)?
+        .map_err(|e| ApiError::Database(format!("find appeal: {e}")))?
         .ok_or_else(|| ApiError::NotFound("appeal not found".into()))?;
 
     AppealRepo::respond(
@@ -118,11 +115,11 @@ pub async fn respond_appeal(
         &req.status,
     )
     .await
-    .map_err(db_err)?;
+    .map_err(|e| ApiError::Database(format!("respond to appeal: {e}")))?;
 
     let updated = AppealRepo::find_by_id(&state.db, id)
         .await
-        .map_err(db_err)?
+        .map_err(|e| ApiError::Database(format!("find appeal: {e}")))?
         .ok_or_else(|| ApiError::NotFound("appeal not found".into()))?;
 
     Ok(Json(appeal_to_response(updated)))

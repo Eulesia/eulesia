@@ -28,20 +28,33 @@ pub struct UserDocument {
 pub async fn ensure_indexes(client: &Client) {
     // Threads index
     let threads = client.index("threads");
-    let _ = threads
+    if let Err(e) = threads
         .set_filterable_attributes(["scope", "municipality_id", "tags", "author_id"])
-        .await;
-    let _ = threads
+        .await
+    {
+        tracing::warn!(error = %e, "failed to set filterable attributes on threads index");
+    }
+    if let Err(e) = threads
         .set_sortable_attributes(["score", "created_at"])
-        .await;
-    let _ = threads
+        .await
+    {
+        tracing::warn!(error = %e, "failed to set sortable attributes on threads index");
+    }
+    if let Err(e) = threads
         .set_searchable_attributes(["title", "content", "tags"])
-        .await;
+        .await
+    {
+        tracing::warn!(error = %e, "failed to set searchable attributes on threads index");
+    }
 
     // Users index
     let users = client.index("users");
-    let _ = users.set_searchable_attributes(["username", "name"]).await;
-    let _ = users.set_filterable_attributes(["role"]).await;
+    if let Err(e) = users.set_searchable_attributes(["username", "name"]).await {
+        tracing::warn!(error = %e, "failed to set searchable attributes on users index");
+    }
+    if let Err(e) = users.set_filterable_attributes(["role"]).await {
+        tracing::warn!(error = %e, "failed to set filterable attributes on users index");
+    }
 
     info!("Meilisearch indexes configured");
 }

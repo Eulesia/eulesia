@@ -39,11 +39,6 @@ pub struct UpdateProfileRequest {
 // Helpers
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::needless_pass_by_value)]
-fn db_err(e: sea_orm::DbErr) -> ApiError {
-    ApiError::Database(e.to_string())
-}
-
 fn user_to_profile(u: eulesia_db::entities::users::Model) -> UserProfileResponse {
     UserProfileResponse {
         id: u.id,
@@ -69,7 +64,7 @@ async fn get_user_profile(
 ) -> Result<Json<UserProfileResponse>, ApiError> {
     let user = UserRepo::find_by_id(&state.db, id)
         .await
-        .map_err(db_err)?
+        .map_err(|e| ApiError::Database(format!("find user: {e}")))?
         .ok_or_else(|| ApiError::NotFound("user not found".into()))?;
 
     if user.deleted_at.is_some() {
@@ -88,7 +83,7 @@ async fn update_my_profile(
     // Ensure user exists.
     UserRepo::find_by_id(&state.db, auth.user_id.0)
         .await
-        .map_err(db_err)?
+        .map_err(|e| ApiError::Database(format!("find user: {e}")))?
         .ok_or(ApiError::Unauthorized)?;
 
     let now = chrono::Utc::now().fixed_offset();
@@ -115,7 +110,9 @@ async fn update_my_profile(
         am.locale = Set(locale);
     }
 
-    let updated = UserRepo::update(&state.db, am).await.map_err(db_err)?;
+    let updated = UserRepo::update(&state.db, am)
+        .await
+        .map_err(|e| ApiError::Database(format!("update user profile: {e}")))?;
     Ok(Json(user_to_profile(updated)))
 }
 

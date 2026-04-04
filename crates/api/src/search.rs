@@ -4,6 +4,7 @@ use axum::{
     routing::get,
 };
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use eulesia_common::error::ApiError;
 
@@ -38,26 +39,36 @@ async fn search_handler(
         let search_type = params.r#type.as_deref();
         if search_type.is_none() || search_type == Some("threads") {
             let threads_index = client.inner().index("threads");
-            if let Ok(search_result) = threads_index
+            match threads_index
                 .search()
                 .with_query(&params.q)
                 .with_limit(limit)
                 .execute::<serde_json::Value>()
                 .await
             {
-                result.threads = search_result.hits.into_iter().map(|h| h.result).collect();
+                Ok(search_result) => {
+                    result.threads = search_result.hits.into_iter().map(|h| h.result).collect();
+                }
+                Err(e) => {
+                    warn!(error = %e, "search threads index failed");
+                }
             }
         }
         if search_type.is_none() || search_type == Some("users") {
             let users_index = client.inner().index("users");
-            if let Ok(search_result) = users_index
+            match users_index
                 .search()
                 .with_query(&params.q)
                 .with_limit(limit)
                 .execute::<serde_json::Value>()
                 .await
             {
-                result.users = search_result.hits.into_iter().map(|h| h.result).collect();
+                Ok(search_result) => {
+                    result.users = search_result.hits.into_iter().map(|h| h.result).collect();
+                }
+                Err(e) => {
+                    warn!(error = %e, "search users index failed");
+                }
             }
         }
     }

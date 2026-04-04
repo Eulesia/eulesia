@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::channels;
 use crate::types::NotificationEvent;
@@ -30,26 +30,36 @@ impl NotificationDispatcher {
         }
 
         // Channel 2: FCM (push to native devices)
-        let devices = DeviceRepo::list_active_for_user(&*self.db, event.user_id).await;
-        if let Ok(devs) = devices {
-            for dev in devs {
-                if let Some(ref token) = dev.fcm_token {
-                    self.fcm
-                        .send(token, &event.title, event.body.as_deref().unwrap_or(""))
-                        .await;
+        match DeviceRepo::list_active_for_user(&*self.db, event.user_id).await {
+            Ok(devs) => {
+                for dev in devs {
+                    if let Some(ref token) = dev.fcm_token {
+                        self.fcm
+                            .send(token, &event.title, event.body.as_deref().unwrap_or(""))
+                            .await;
+                    }
                 }
             }
+            Err(e) => warn!(error = %e, "failed to fetch devices for FCM delivery"),
         }
 
         // Channel 3: Web Push (browser push)
-        let subs = PushSubscriptionRepo::list_for_user(&*self.db, event.user_id).await;
-        if let Ok(subscriptions) = subs {
-            let payload = serde_json::to_string(event).unwrap_or_default();
-            for sub in subscriptions {
-                self.webpush
-                    .send(&sub.endpoint, &sub.p256dh, &sub.auth, &payload)
-                    .await;
+        let payload = match serde_json::to_string(event) {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(error = %e, "failed to serialize notification payload");
+                return;
             }
+        };
+        match PushSubscriptionRepo::list_for_user(&*self.db, event.user_id).await {
+            Ok(subscriptions) => {
+                for sub in subscriptions {
+                    self.webpush
+                        .send(&sub.endpoint, &sub.p256dh, &sub.auth, &payload)
+                        .await;
+                }
+            }
+            Err(e) => warn!(error = %e, "failed to fetch push subscriptions for web push delivery"),
         }
 
         info!(user_id = %event.user_id, event_type = %event.event_type, "notification dispatched");

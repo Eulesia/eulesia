@@ -5,12 +5,10 @@ pub struct SearchClient {
 }
 
 impl SearchClient {
-    /// # Panics
-    ///
-    /// Panics if the Meilisearch client cannot be created (e.g. invalid URL or API key).
-    pub fn new(url: &str, api_key: Option<&str>) -> Self {
-        let client = Client::new(url, api_key).expect("failed to create Meilisearch client");
-        Self { client }
+    pub fn new(url: &str, api_key: Option<&str>) -> Result<Self, String> {
+        let client = Client::new(url, api_key)
+            .map_err(|e| format!("failed to create Meilisearch client: {e}"))?;
+        Ok(Self { client })
     }
 
     pub const fn inner(&self) -> &Client {

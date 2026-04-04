@@ -36,11 +36,6 @@ fn report_to_response(r: eulesia_db::entities::content_reports::Model) -> Report
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn db_err(e: sea_orm::DbErr) -> ApiError {
-    ApiError::Database(e.to_string())
-}
-
 /// POST /moderation/reports — any authenticated user can file a report.
 pub async fn create_report(
     auth: AuthUser,
@@ -66,7 +61,9 @@ pub async fn create_report(
         ..Default::default()
     };
 
-    let report = ReportRepo::create(&state.db, model).await.map_err(db_err)?;
+    let report = ReportRepo::create(&state.db, model)
+        .await
+        .map_err(|e| ApiError::Database(format!("create report: {e}")))?;
     Ok(Json(report_to_response(report)))
 }
 
@@ -83,7 +80,7 @@ pub async fn list_reports(
 
     let (items, total) = ReportRepo::list(&state.db, params.status.as_deref(), offset, limit)
         .await
-        .map_err(db_err)?;
+        .map_err(|e| ApiError::Database(format!("list reports: {e}")))?;
 
     let data = items.into_iter().map(report_to_response).collect();
 
@@ -105,7 +102,7 @@ pub async fn get_report(
 
     let report = ReportRepo::find_by_id(&state.db, id)
         .await
-        .map_err(db_err)?
+        .map_err(|e| ApiError::Database(format!("find report: {e}")))?
         .ok_or_else(|| ApiError::NotFound("report not found".into()))?;
 
     Ok(Json(report_to_response(report)))
@@ -123,7 +120,7 @@ pub async fn update_report(
     // Ensure report exists.
     ReportRepo::find_by_id(&state.db, id)
         .await
-        .map_err(db_err)?
+        .map_err(|e| ApiError::Database(format!("find report: {e}")))?
         .ok_or_else(|| ApiError::NotFound("report not found".into()))?;
 
     if let Some(ref status) = req.status {
@@ -134,18 +131,18 @@ pub async fn update_report(
         };
         ReportRepo::update_status(&state.db, id, status, resolved_at)
             .await
-            .map_err(db_err)?;
+            .map_err(|e| ApiError::Database(format!("update report status: {e}")))?;
     }
 
     if let Some(moderator_id) = req.assigned_to {
         ReportRepo::assign(&state.db, id, moderator_id)
             .await
-            .map_err(db_err)?;
+            .map_err(|e| ApiError::Database(format!("assign report: {e}")))?;
     }
 
     let updated = ReportRepo::find_by_id(&state.db, id)
         .await
-        .map_err(db_err)?
+        .map_err(|e| ApiError::Database(format!("find report: {e}")))?
         .ok_or_else(|| ApiError::NotFound("report not found".into()))?;
 
     Ok(Json(report_to_response(updated)))

@@ -39,7 +39,8 @@ async fn main() -> anyhow::Result<()> {
     // Optionally create Meilisearch search client and configure indexes
     let search_client = if let Some(ref url) = config.meili_url {
         let client =
-            eulesia_search::client::SearchClient::new(url, config.meili_api_key.as_deref());
+            eulesia_search::client::SearchClient::new(url, config.meili_api_key.as_deref())
+                .map_err(|e| anyhow::anyhow!(e))?;
         info!("Meilisearch client configured at {url}");
 
         // Ensure indexes exist with correct settings
