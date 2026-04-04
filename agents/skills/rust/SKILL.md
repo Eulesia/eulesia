@@ -39,10 +39,13 @@ crates/
 ├── auth/       Authentication, sessions, password hashing, middleware
 ├── api/        axum route handlers, request/response types
 ├── jobs/       Background workers (outbox processor)
+├── notify/     Notification dispatch (DB, FCM, Web Push channels)
+├── ws/         WebSocket handler + DashMap connection registry
+├── search/     Meilisearch client, index definitions, outbox sync
 └── server/     Binary: config, logging, startup, graceful shutdown
 ```
 
-Dependencies flow inward: `server` → `api` → `auth`/`db` → `common`.
+Dependencies flow inward: `server` → `api`/`ws` → `auth`/`db`/`notify`/`search` → `common`.
 `common` has zero IO dependencies.
 
 ### Auth middleware
