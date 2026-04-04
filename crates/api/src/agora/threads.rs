@@ -5,6 +5,8 @@ use axum::extract::{Path, Query, State};
 use sea_orm::ActiveValue::Set;
 use uuid::Uuid;
 
+use tracing::warn;
+
 use crate::AppState;
 use eulesia_auth::session::{AuthUser, OptionalAuth};
 use eulesia_common::error::ApiError;
@@ -419,8 +421,8 @@ pub async fn create_thread(
     }
 
     // Best-effort search index event
-    let _ = emit_event(
-        &state.db,
+    if let Err(e) = emit_event(
+        &*state.db,
         "thread_created",
         serde_json::json!({
             "id": thread.id.to_string(),
@@ -431,7 +433,10 @@ pub async fn create_thread(
             "created_at": thread.created_at.timestamp(),
         }),
     )
-    .await;
+    .await
+    {
+        warn!("failed to emit thread_created event: {e}");
+    }
 
     // Fetch author for response.
     let user = UserRepo::find_by_id(&state.db, auth.user_id.0)
@@ -522,8 +527,8 @@ pub async fn update_thread(
     };
 
     // Best-effort search index event
-    let _ = emit_event(
-        &state.db,
+    if let Err(e) = emit_event(
+        &*state.db,
         "thread_updated",
         serde_json::json!({
             "id": updated.id.to_string(),
@@ -534,7 +539,10 @@ pub async fn update_thread(
             "created_at": updated.created_at.timestamp(),
         }),
     )
-    .await;
+    .await
+    {
+        warn!("failed to emit thread_updated event: {e}");
+    }
 
     let user = UserRepo::find_by_id(&state.db, auth.user_id.0)
         .await
@@ -599,14 +607,17 @@ pub async fn delete_thread(
         .map_err(db_err)?;
 
     // Best-effort search index event
-    let _ = emit_event(
-        &state.db,
+    if let Err(e) = emit_event(
+        &*state.db,
         "thread_deleted",
         serde_json::json!({
             "id": id.to_string(),
         }),
     )
-    .await;
+    .await
+    {
+        warn!("failed to emit thread_deleted event: {e}");
+    }
 
     Ok(())
 }

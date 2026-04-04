@@ -6,8 +6,10 @@ use crate::entities::outbox;
 use crate::repo::outbox::OutboxRepo;
 
 /// Emit an outbox event for async processing by the outbox worker.
+///
+/// Accepts `&impl ConnectionTrait` so it can be called inside transactions.
 pub async fn emit_event(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     event_type: &str,
     payload: Value,
 ) -> Result<(), DbErr> {

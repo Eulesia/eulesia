@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveValue::Set, DatabaseConnection};
 use serde::Deserialize;
-use tracing::info;
+use tracing::{info, warn};
 
 use eulesia_common::types::{DeviceId, SessionId, UserId, UserRole, new_id};
 use eulesia_db::entities::{sessions, users};
@@ -108,7 +108,7 @@ impl AuthService {
         info!(user_id = %user.id, username = %user.username, "user registered");
 
         // Best-effort search index
-        let _ = eulesia_db::repo::outbox_helpers::emit_event(
+        if let Err(e) = eulesia_db::repo::outbox_helpers::emit_event(
             db,
             "user_created",
             serde_json::json!({
@@ -118,7 +118,10 @@ impl AuthService {
                 "role": user.role,
             }),
         )
-        .await;
+        .await
+        {
+            warn!("failed to emit user_created event: {e}");
+        }
 
         // Create session
         let token = create_session(

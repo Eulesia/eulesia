@@ -8,7 +8,7 @@ pub struct OutboxRepo;
 
 impl OutboxRepo {
     pub async fn create(
-        db: &DatabaseConnection,
+        db: &impl ConnectionTrait,
         model: outbox::ActiveModel,
     ) -> Result<outbox::Model, DbErr> {
         model.insert(db).await

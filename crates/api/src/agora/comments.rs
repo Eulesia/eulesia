@@ -3,6 +3,8 @@ use axum::extract::{Path, State};
 use sea_orm::ActiveValue::Set;
 use uuid::Uuid;
 
+use tracing::warn;
+
 use crate::AppState;
 use eulesia_auth::session::AuthUser;
 use eulesia_common::error::ApiError;
@@ -83,8 +85,8 @@ pub async fn create_comment(
 
     // Notify thread author (if not self-comment)
     if thread.author_id != auth.user_id.0 {
-        let _ = emit_event(
-            &state.db,
+        if let Err(e) = emit_event(
+            &*state.db,
             "notification",
             serde_json::json!({
                 "user_id": thread.author_id.to_string(),
@@ -94,7 +96,10 @@ pub async fn create_comment(
                 "link": format!("/agora/threads/{}", thread.id),
             }),
         )
-        .await;
+        .await
+        {
+            warn!("failed to emit notification event: {e}");
+        }
     }
 
     // Fetch author for response.
