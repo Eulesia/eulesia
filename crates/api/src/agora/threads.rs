@@ -12,6 +12,7 @@ use eulesia_common::types::{UserRole, new_id};
 use eulesia_db::repo::blocks::BlockRepo;
 use eulesia_db::repo::bookmarks::BookmarkRepo;
 use eulesia_db::repo::comments::CommentRepo;
+use eulesia_db::repo::outbox_helpers::emit_event;
 use eulesia_db::repo::tags::TagRepo;
 use eulesia_db::repo::thread_views::ThreadViewRepo;
 use eulesia_db::repo::threads::ThreadRepo;
@@ -417,6 +418,21 @@ pub async fn create_thread(
         }
     }
 
+    // Best-effort search index event
+    let _ = emit_event(
+        &state.db,
+        "thread_created",
+        serde_json::json!({
+            "id": thread.id.to_string(),
+            "title": thread.title,
+            "content": thread.content,
+            "author_id": thread.author_id.to_string(),
+            "scope": thread.scope,
+            "created_at": thread.created_at.timestamp(),
+        }),
+    )
+    .await;
+
     // Fetch author for response.
     let user = UserRepo::find_by_id(&state.db, auth.user_id.0)
         .await
@@ -505,6 +521,21 @@ pub async fn update_thread(
             .map_err(db_err)?
     };
 
+    // Best-effort search index event
+    let _ = emit_event(
+        &state.db,
+        "thread_updated",
+        serde_json::json!({
+            "id": updated.id.to_string(),
+            "title": updated.title,
+            "content": updated.content,
+            "author_id": updated.author_id.to_string(),
+            "scope": updated.scope,
+            "created_at": updated.created_at.timestamp(),
+        }),
+    )
+    .await;
+
     let user = UserRepo::find_by_id(&state.db, auth.user_id.0)
         .await
         .map_err(db_err)?
@@ -566,6 +597,16 @@ pub async fn delete_thread(
     ThreadRepo::soft_delete(&state.db, id)
         .await
         .map_err(db_err)?;
+
+    // Best-effort search index event
+    let _ = emit_event(
+        &state.db,
+        "thread_deleted",
+        serde_json::json!({
+            "id": id.to_string(),
+        }),
+    )
+    .await;
 
     Ok(())
 }

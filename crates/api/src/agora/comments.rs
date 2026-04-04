@@ -8,6 +8,7 @@ use eulesia_auth::session::AuthUser;
 use eulesia_common::error::ApiError;
 use eulesia_common::types::{UserRole, new_id};
 use eulesia_db::repo::comments::CommentRepo;
+use eulesia_db::repo::outbox_helpers::emit_event;
 use eulesia_db::repo::threads::ThreadRepo;
 use eulesia_db::repo::users::UserRepo;
 
@@ -79,6 +80,22 @@ pub async fn create_comment(
     ThreadRepo::increment_reply_count(&state.db, thread_id, 1)
         .await
         .map_err(db_err)?;
+
+    // Notify thread author (if not self-comment)
+    if thread.author_id != auth.user_id.0 {
+        let _ = emit_event(
+            &state.db,
+            "notification",
+            serde_json::json!({
+                "user_id": thread.author_id.to_string(),
+                "event_type": "reply",
+                "title": "New reply on your thread",
+                "body": null,
+                "link": format!("/agora/threads/{}", thread.id),
+            }),
+        )
+        .await;
+    }
 
     // Fetch author for response.
     let user = UserRepo::find_by_id(&state.db, auth.user_id.0)

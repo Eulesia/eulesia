@@ -107,6 +107,19 @@ impl AuthService {
 
         info!(user_id = %user.id, username = %user.username, "user registered");
 
+        // Best-effort search index
+        let _ = eulesia_db::repo::outbox_helpers::emit_event(
+            db,
+            "user_created",
+            serde_json::json!({
+                "id": user.id.to_string(),
+                "username": user.username,
+                "name": user.name,
+                "role": user.role,
+            }),
+        )
+        .await;
+
         // Create session
         let token = create_session(
             db,

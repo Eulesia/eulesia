@@ -26,6 +26,19 @@ impl PushSubscriptionRepo {
         Ok(())
     }
 
+    /// Delete a push subscription by endpoint regardless of user.
+    /// Handles account switches on the same browser.
+    pub async fn delete_by_endpoint_global(
+        db: &DatabaseConnection,
+        endpoint: &str,
+    ) -> Result<(), DbErr> {
+        push_subscriptions::Entity::delete_many()
+            .filter(push_subscriptions::Column::Endpoint.eq(endpoint))
+            .exec(db)
+            .await?;
+        Ok(())
+    }
+
     pub async fn list_for_user(
         db: &impl ConnectionTrait,
         user_id: Uuid,

@@ -142,8 +142,8 @@ async fn push_subscribe(
 ) -> Result<(), ApiError> {
     // Idempotent: if endpoint already registered, delete old and re-create
     // with updated keys (browsers may rotate p256dh/auth on re-subscribe).
-    let _ =
-        PushSubscriptionRepo::delete_by_endpoint(&state.db, auth.user_id.0, &req.endpoint).await;
+    // Use global delete to handle account switches on the same browser.
+    let _ = PushSubscriptionRepo::delete_by_endpoint_global(&state.db, &req.endpoint).await;
 
     let now = chrono::Utc::now().fixed_offset();
     PushSubscriptionRepo::create(

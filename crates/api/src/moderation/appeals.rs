@@ -8,6 +8,7 @@ use eulesia_auth::session::AuthUser;
 use eulesia_common::error::ApiError;
 use eulesia_common::types::new_id;
 use eulesia_db::repo::appeals::AppealRepo;
+use eulesia_db::repo::sanctions::SanctionRepo;
 
 use eulesia_common::types::AppealStatus;
 
@@ -49,13 +50,28 @@ pub async fn create_appeal(
         return Err(ApiError::BadRequest("reason must not be empty".into()));
     }
 
+    // Require sanction_id
+    let sanction_id = req
+        .sanction_id
+        .ok_or_else(|| ApiError::BadRequest("sanction_id is required for appeals".into()))?;
+
+    // Verify sanction belongs to the caller
+    let sanction = SanctionRepo::find_by_id(&state.db, sanction_id)
+        .await
+        .map_err(|e| ApiError::Database(format!("find sanction: {e}")))?
+        .ok_or_else(|| ApiError::NotFound("sanction not found".into()))?;
+
+    if sanction.user_id != auth.user_id.0 {
+        return Err(ApiError::Forbidden);
+    }
+
     let id = new_id();
     let now = chrono::Utc::now().fixed_offset();
 
     let model = eulesia_db::entities::moderation_appeals::ActiveModel {
         id: Set(id),
         user_id: Set(auth.user_id.0),
-        sanction_id: Set(req.sanction_id),
+        sanction_id: Set(Some(sanction_id)),
         report_id: Set(req.report_id),
         action_id: Set(req.action_id),
         reason: Set(req.reason),

@@ -12,6 +12,7 @@ pub mod moderation_actions_repo;
 pub mod mutes;
 pub mod notifications;
 pub mod outbox;
+pub mod outbox_helpers;
 pub mod pre_keys;
 pub mod push_subscriptions;
 pub mod reports;
