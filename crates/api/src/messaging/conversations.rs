@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::AppState;
 use eulesia_auth::session::AuthUser;
 use eulesia_common::error::ApiError;
-use eulesia_common::types::new_id;
+use eulesia_common::types::{GroupRole, new_id};
 use eulesia_db::entities::{
     conversation_epochs, conversations, direct_conversations, membership_events, memberships,
 };
@@ -32,7 +32,7 @@ fn members_from_models(models: &[memberships::Model]) -> Vec<MemberSummary> {
         .iter()
         .map(|m| MemberSummary {
             user_id: m.user_id,
-            role: m.role.clone(),
+            role: m.role.parse::<GroupRole>().unwrap_or(GroupRole::Member),
             joined_epoch: m.joined_epoch,
         })
         .collect()
@@ -144,7 +144,7 @@ async fn create_direct(
                             id: Set(new_id()),
                             conversation_id: Set(existing.id),
                             user_id: Set(uid),
-                            role: Set("member".into()),
+                            role: Set(GroupRole::Member.as_str().into()),
                             joined_epoch: Set(new_epoch),
                             left_at: Set(None),
                             removed_by: Set(None),
@@ -240,7 +240,7 @@ async fn create_direct(
                 id: Set(mem_id),
                 conversation_id: Set(conv_id),
                 user_id: Set(user_id),
-                role: Set("member".into()),
+                role: Set(GroupRole::Member.as_str().into()),
                 joined_epoch: Set(0),
                 left_at: Set(None),
                 removed_by: Set(None),
@@ -355,7 +355,7 @@ async fn create_group(
             id: Set(new_id()),
             conversation_id: Set(conv_id),
             user_id: Set(caller),
-            role: Set("owner".into()),
+            role: Set(GroupRole::Owner.as_str().into()),
             joined_epoch: Set(0),
             left_at: Set(None),
             removed_by: Set(None),
@@ -416,7 +416,7 @@ async fn create_group(
                 id: Set(new_id()),
                 conversation_id: Set(conv_id),
                 user_id: Set(member_id),
-                role: Set("member".into()),
+                role: Set(GroupRole::Member.as_str().into()),
                 joined_epoch: Set(0),
                 left_at: Set(None),
                 removed_by: Set(None),
@@ -545,7 +545,12 @@ pub async fn update(
         .map_err(db_err)?
         .ok_or(ApiError::Forbidden)?;
 
-    if membership.role != "owner" {
+    let caller_role: GroupRole = membership
+        .role
+        .parse()
+        .map_err(|e: String| ApiError::Internal(e))?;
+
+    if !caller_role.is_owner() {
         return Err(ApiError::Forbidden);
     }
 
@@ -595,7 +600,11 @@ pub async fn delete_conversation(
         .ok_or(ApiError::Forbidden)?;
 
     let is_creator = conv.creator_id == Some(auth.user_id.0);
-    let is_admin = membership.role == "owner";
+    let caller_role: GroupRole = membership
+        .role
+        .parse()
+        .map_err(|e: String| ApiError::Internal(e))?;
+    let is_admin = caller_role.is_owner();
 
     if !is_creator && !is_admin {
         return Err(ApiError::Forbidden);

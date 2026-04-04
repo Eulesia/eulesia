@@ -1,3 +1,4 @@
+use eulesia_common::types::{AppealStatus, ReportReason, ReportStatus, SanctionType};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -9,19 +10,19 @@ use uuid::Uuid;
 pub struct CreateReportRequest {
     pub content_type: String,
     pub content_id: Uuid,
-    pub reason: String,
+    pub reason: ReportReason,
     pub description: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateReportRequest {
-    pub status: Option<String>,
+    pub status: Option<ReportStatus>,
     pub assigned_to: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ReportListParams {
-    pub status: Option<String>,
+    pub status: Option<ReportStatus>,
     pub offset: Option<u64>,
     pub limit: Option<u64>,
 }
@@ -29,7 +30,7 @@ pub struct ReportListParams {
 #[derive(Debug, Deserialize)]
 pub struct CreateSanctionRequest {
     pub user_id: Uuid,
-    pub sanction_type: String,
+    pub sanction_type: SanctionType,
     pub reason: Option<String>,
     pub expires_at: Option<String>,
 }
@@ -50,7 +51,7 @@ pub struct CreateAppealRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct AppealListParams {
-    pub status: Option<String>,
+    pub status: Option<AppealStatus>,
     pub offset: Option<u64>,
     pub limit: Option<u64>,
 }
@@ -58,7 +59,7 @@ pub struct AppealListParams {
 #[derive(Debug, Deserialize)]
 pub struct RespondAppealRequest {
     pub admin_response: String,
-    pub status: String,
+    pub status: AppealStatus,
 }
 
 // ---------------------------------------------------------------------------

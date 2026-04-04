@@ -9,6 +9,8 @@ use eulesia_common::error::ApiError;
 use eulesia_common::types::new_id;
 use eulesia_db::repo::appeals::AppealRepo;
 
+use eulesia_common::types::AppealStatus;
+
 use super::require_moderator;
 use super::types::{
     AppealListParams, AppealListResponse, AppealResponse, CreateAppealRequest, RespondAppealRequest,
@@ -57,7 +59,7 @@ pub async fn create_appeal(
         report_id: Set(req.report_id),
         action_id: Set(req.action_id),
         reason: Set(req.reason),
-        status: Set("pending".to_owned()),
+        status: Set(AppealStatus::Pending.as_str().to_owned()),
         created_at: Set(now),
         ..Default::default()
     };
@@ -79,7 +81,8 @@ pub async fn list_appeals(
     let offset = params.offset.unwrap_or(0);
     let limit = clamp_limit(params.limit);
 
-    let (items, total) = AppealRepo::list(&state.db, params.status.as_deref(), offset, limit)
+    let status_str = params.status.map(|s| s.as_str());
+    let (items, total) = AppealRepo::list(&state.db, status_str, offset, limit)
         .await
         .map_err(|e| ApiError::Database(format!("list appeals: {e}")))?;
 
@@ -112,7 +115,7 @@ pub async fn respond_appeal(
         id,
         &req.admin_response,
         auth.user_id.0,
-        &req.status,
+        req.status.as_str(),
     )
     .await
     .map_err(|e| ApiError::Database(format!("respond to appeal: {e}")))?;

@@ -9,7 +9,8 @@ pub enum ServerMessage {
         conversation_id: Uuid,
         message_id: Uuid,
         sender_id: Uuid,
-        ciphertext: String, // base64
+        /// Base64-encoded ciphertext (opaque to server).
+        ciphertext: String,
         epoch: i64,
     },
     #[serde(rename = "notification")]

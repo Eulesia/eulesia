@@ -2,12 +2,10 @@ use eulesia_db::entities::notifications;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection};
 use uuid::Uuid;
 
+use crate::error::NotifyError;
 use crate::types::NotificationEvent;
 
-pub async fn send(
-    db: &DatabaseConnection,
-    event: &NotificationEvent,
-) -> Result<(), sea_orm::DbErr> {
+pub async fn send(db: &DatabaseConnection, event: &NotificationEvent) -> Result<(), NotifyError> {
     let now = chrono::Utc::now().fixed_offset();
     notifications::ActiveModel {
         id: Set(Uuid::now_v7()),
@@ -20,6 +18,10 @@ pub async fn send(
         created_at: Set(now),
     }
     .insert(db)
-    .await?;
+    .await
+    .map_err(|source| NotifyError::Database {
+        context: "persist notification",
+        source,
+    })?;
     Ok(())
 }

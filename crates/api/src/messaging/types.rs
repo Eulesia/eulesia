@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use eulesia_common::types::GroupRole;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -35,7 +36,7 @@ pub struct InviteMemberRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateRoleRequest {
-    pub role: String,
+    pub role: GroupRole,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,7 +85,7 @@ pub struct ConversationListItem {
 #[derive(Debug, Serialize)]
 pub struct MemberSummary {
     pub user_id: Uuid,
-    pub role: String,
+    pub role: GroupRole,
     pub joined_epoch: i64,
 }
 

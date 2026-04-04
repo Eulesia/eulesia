@@ -10,15 +10,22 @@ use uuid::Uuid;
 
 use crate::AppState;
 use eulesia_common::error::ApiError;
+use eulesia_common::types::UserRole;
 use eulesia_db::repo::users::UserRepo;
 
-/// Check that the given user has the "moderator" role.
+/// Check that the given user has the `Moderator` role.
 async fn require_moderator(db: &DatabaseConnection, user_id: Uuid) -> Result<(), ApiError> {
     let user = UserRepo::find_by_id(db, user_id)
         .await
         .map_err(|e| ApiError::Database(e.to_string()))?
         .ok_or(ApiError::Unauthorized)?;
-    if user.role != "moderator" {
+
+    let role: UserRole = user
+        .role
+        .parse()
+        .map_err(|e: String| ApiError::Internal(e))?;
+
+    if !role.is_moderator() {
         return Err(ApiError::Forbidden);
     }
     Ok(())

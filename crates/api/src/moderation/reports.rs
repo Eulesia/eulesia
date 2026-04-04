@@ -9,6 +9,8 @@ use eulesia_common::error::ApiError;
 use eulesia_common::types::new_id;
 use eulesia_db::repo::reports::ReportRepo;
 
+use eulesia_common::types::ReportStatus;
+
 use super::require_moderator;
 use super::types::{
     CreateReportRequest, ReportListParams, ReportListResponse, ReportResponse, UpdateReportRequest,
@@ -42,10 +44,6 @@ pub async fn create_report(
     State(state): State<AppState>,
     Json(req): Json<CreateReportRequest>,
 ) -> Result<Json<ReportResponse>, ApiError> {
-    if req.reason.trim().is_empty() {
-        return Err(ApiError::BadRequest("reason must not be empty".into()));
-    }
-
     let id = new_id();
     let now = chrono::Utc::now().fixed_offset();
 
@@ -54,9 +52,9 @@ pub async fn create_report(
         reporter_id: Set(auth.user_id.0),
         content_type: Set(req.content_type),
         content_id: Set(req.content_id),
-        reason: Set(req.reason),
+        reason: Set(req.reason.as_str().to_owned()),
         description: Set(req.description),
-        status: Set("pending".to_owned()),
+        status: Set(ReportStatus::Pending.as_str().to_owned()),
         created_at: Set(now),
         ..Default::default()
     };
@@ -78,7 +76,8 @@ pub async fn list_reports(
     let offset = params.offset.unwrap_or(0);
     let limit = clamp_limit(params.limit);
 
-    let (items, total) = ReportRepo::list(&state.db, params.status.as_deref(), offset, limit)
+    let status_str = params.status.map(|s| s.as_str());
+    let (items, total) = ReportRepo::list(&state.db, status_str, offset, limit)
         .await
         .map_err(|e| ApiError::Database(format!("list reports: {e}")))?;
 
@@ -123,13 +122,13 @@ pub async fn update_report(
         .map_err(|e| ApiError::Database(format!("find report: {e}")))?
         .ok_or_else(|| ApiError::NotFound("report not found".into()))?;
 
-    if let Some(ref status) = req.status {
-        let resolved_at = if status == "resolved" {
+    if let Some(status) = req.status {
+        let resolved_at = if matches!(status, ReportStatus::Resolved) {
             Some(chrono::Utc::now().fixed_offset())
         } else {
             None
         };
-        ReportRepo::update_status(&state.db, id, status, resolved_at)
+        ReportRepo::update_status(&state.db, id, status.as_str(), resolved_at)
             .await
             .map_err(|e| ApiError::Database(format!("update report status: {e}")))?;
     }

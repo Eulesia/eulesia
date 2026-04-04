@@ -3,7 +3,7 @@ use sea_orm::{ActiveValue::Set, DatabaseConnection};
 use serde::Deserialize;
 use tracing::info;
 
-use eulesia_common::types::{DeviceId, SessionId, UserId, new_id};
+use eulesia_common::types::{DeviceId, SessionId, UserId, UserRole, new_id};
 use eulesia_db::entities::{sessions, users};
 use eulesia_db::repo::sessions::SessionRepo;
 use eulesia_db::repo::users::UserRepo;
@@ -83,7 +83,7 @@ impl AuthService {
                 email: Set(req.email),
                 password_hash: Set(Some(hash)),
                 name: Set(req.name),
-                role: Set("citizen".to_string()),
+                role: Set(UserRole::Citizen.as_str().to_string()),
                 identity_verified: Set(false),
                 identity_level: Set("basic".to_string()),
                 locale: Set("en".to_string()),

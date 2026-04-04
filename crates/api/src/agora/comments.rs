@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::AppState;
 use eulesia_auth::session::AuthUser;
 use eulesia_common::error::ApiError;
-use eulesia_common::types::new_id;
+use eulesia_common::types::{UserRole, new_id};
 use eulesia_db::repo::comments::CommentRepo;
 use eulesia_db::repo::threads::ThreadRepo;
 use eulesia_db::repo::users::UserRepo;
@@ -185,7 +185,12 @@ pub async fn delete_comment(
         .map_err(db_err)?
         .ok_or_else(|| ApiError::NotFound("user not found".into()))?;
 
-    if comment.author_id != auth.user_id.0 && user.role != "moderator" {
+    let role: UserRole = user
+        .role
+        .parse()
+        .map_err(|e: String| ApiError::Internal(e))?;
+
+    if comment.author_id != auth.user_id.0 && !role.is_moderator() {
         return Err(ApiError::Forbidden);
     }
 

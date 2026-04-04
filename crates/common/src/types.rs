@@ -219,6 +219,254 @@ impl std::str::FromStr for Platform {
     }
 }
 
+// ---------------------------------------------------------------------------
+// UserRole enum
+// ---------------------------------------------------------------------------
+
+/// Platform user role — closed set matching the DB CHECK constraint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UserRole {
+    Citizen,
+    Institution,
+    Moderator,
+}
+
+impl UserRole {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Citizen => "citizen",
+            Self::Institution => "institution",
+            Self::Moderator => "moderator",
+        }
+    }
+
+    pub const fn is_moderator(&self) -> bool {
+        matches!(self, Self::Moderator)
+    }
+}
+
+impl std::fmt::Display for UserRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for UserRole {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "citizen" => Ok(Self::Citizen),
+            "institution" => Ok(Self::Institution),
+            "moderator" => Ok(Self::Moderator),
+            other => Err(format!("invalid role: {other}")),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GroupRole enum
+// ---------------------------------------------------------------------------
+
+/// Conversation membership role.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GroupRole {
+    Member,
+    Owner,
+}
+
+impl GroupRole {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Member => "member",
+            Self::Owner => "owner",
+        }
+    }
+
+    pub const fn is_owner(&self) -> bool {
+        matches!(self, Self::Owner)
+    }
+}
+
+impl std::fmt::Display for GroupRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for GroupRole {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "member" => Ok(Self::Member),
+            "owner" => Ok(Self::Owner),
+            other => Err(format!("invalid group role: {other}")),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Moderation enums
+// ---------------------------------------------------------------------------
+
+/// Content report status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReportStatus {
+    Pending,
+    Reviewing,
+    Resolved,
+    Dismissed,
+}
+
+impl ReportStatus {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Reviewing => "reviewing",
+            Self::Resolved => "resolved",
+            Self::Dismissed => "dismissed",
+        }
+    }
+}
+
+impl std::fmt::Display for ReportStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ReportStatus {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(Self::Pending),
+            "reviewing" => Ok(Self::Reviewing),
+            "resolved" => Ok(Self::Resolved),
+            "dismissed" => Ok(Self::Dismissed),
+            other => Err(format!("invalid report status: {other}")),
+        }
+    }
+}
+
+/// Content report reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReportReason {
+    Illegal,
+    Harassment,
+    Spam,
+    Misinformation,
+    Other,
+}
+
+impl ReportReason {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Illegal => "illegal",
+            Self::Harassment => "harassment",
+            Self::Spam => "spam",
+            Self::Misinformation => "misinformation",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl std::fmt::Display for ReportReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ReportReason {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "illegal" => Ok(Self::Illegal),
+            "harassment" => Ok(Self::Harassment),
+            "spam" => Ok(Self::Spam),
+            "misinformation" => Ok(Self::Misinformation),
+            "other" => Ok(Self::Other),
+            other => Err(format!("invalid report reason: {other}")),
+        }
+    }
+}
+
+/// User sanction type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SanctionType {
+    Warning,
+    Suspension,
+    Ban,
+}
+
+impl SanctionType {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Warning => "warning",
+            Self::Suspension => "suspension",
+            Self::Ban => "ban",
+        }
+    }
+}
+
+impl std::fmt::Display for SanctionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for SanctionType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "warning" => Ok(Self::Warning),
+            "suspension" => Ok(Self::Suspension),
+            "ban" => Ok(Self::Ban),
+            other => Err(format!("invalid sanction type: {other}")),
+        }
+    }
+}
+
+/// Moderation appeal status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppealStatus {
+    Pending,
+    Accepted,
+    Rejected,
+}
+
+impl AppealStatus {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+impl std::fmt::Display for AppealStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for AppealStatus {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(Self::Pending),
+            "accepted" => Ok(Self::Accepted),
+            "rejected" => Ok(Self::Rejected),
+            other => Err(format!("invalid appeal status: {other}")),
+        }
+    }
+}
+
 /// Standard timestamp type.
 pub type Timestamp = DateTime<Utc>;
 

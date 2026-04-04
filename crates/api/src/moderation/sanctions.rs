@@ -58,7 +58,7 @@ pub async fn create_sanction(
     let model = eulesia_db::entities::user_sanctions::ActiveModel {
         id: Set(id),
         user_id: Set(req.user_id),
-        sanction_type: Set(req.sanction_type),
+        sanction_type: Set(req.sanction_type.as_str().to_owned()),
         reason: Set(req.reason),
         issued_by: Set(auth.user_id.0),
         issued_at: Set(now),

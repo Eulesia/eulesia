@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::AppState;
 use eulesia_auth::session::AuthUser;
 use eulesia_common::error::ApiError;
-use eulesia_common::types::new_id;
+use eulesia_common::types::{GroupRole, new_id};
 use eulesia_db::entities::{conversation_epochs, membership_events, memberships};
 use eulesia_db::repo::conversations::ConversationRepo;
 use eulesia_db::repo::epochs::EpochRepo;
@@ -51,7 +51,12 @@ pub async fn invite(
         .map_err(db_err)?
         .ok_or(ApiError::Forbidden)?;
 
-    if caller_membership.role != "owner" {
+    let caller_role: GroupRole = caller_membership
+        .role
+        .parse()
+        .map_err(|e: String| ApiError::Internal(e))?;
+
+    if !caller_role.is_owner() {
         return Err(ApiError::Forbidden);
     }
 
@@ -91,7 +96,7 @@ pub async fn invite(
             id: Set(mem_id),
             conversation_id: Set(conversation_id),
             user_id: Set(req.user_id),
-            role: Set("member".into()),
+            role: Set(GroupRole::Member.as_str().into()),
             joined_epoch: Set(new_epoch),
             left_at: Set(None),
             removed_by: Set(None),
@@ -138,7 +143,7 @@ pub async fn invite(
 
     Ok(Json(MemberSummary {
         user_id: req.user_id,
-        role: "member".into(),
+        role: GroupRole::Member,
         joined_epoch: new_epoch,
     }))
 }
@@ -168,7 +173,12 @@ pub async fn remove_member(
             .map_err(db_err)?
             .ok_or(ApiError::Forbidden)?;
 
-        if caller_membership.role != "owner" {
+        let caller_role: GroupRole = caller_membership
+            .role
+            .parse()
+            .map_err(|e: String| ApiError::Internal(e))?;
+
+        if !caller_role.is_owner() {
             return Err(ApiError::Forbidden);
         }
     }
@@ -180,6 +190,11 @@ pub async fn remove_member(
             .map_err(db_err)?
             .ok_or_else(|| ApiError::NotFound("member not found".into()))?;
 
+    let target_role: GroupRole = target_membership
+        .role
+        .parse()
+        .map_err(|e: String| ApiError::Internal(e))?;
+
     let now = chrono::Utc::now().fixed_offset();
 
     let txn = state
@@ -190,11 +205,14 @@ pub async fn remove_member(
 
     // Prevent removing the last owner — check inside the transaction to avoid
     // TOCTOU races where two concurrent demotions both see count==2.
-    if target_membership.role == "owner" {
+    if target_role.is_owner() {
         let all_members = MembershipRepo::list_active(&txn, conversation_id)
             .await
             .map_err(db_err)?;
-        let owner_count = all_members.iter().filter(|m| m.role == "owner").count();
+        let owner_count = all_members
+            .iter()
+            .filter(|m| m.role.parse::<GroupRole>().is_ok_and(|r| r.is_owner()))
+            .count();
         if owner_count <= 1 {
             return Err(ApiError::BadRequest("cannot remove the last owner".into()));
         }
@@ -269,12 +287,8 @@ pub async fn update_role(
 ) -> Result<Json<MemberSummary>, ApiError> {
     let caller = auth.user_id.0;
 
-    // Validate role.
-    if req.role != "member" && req.role != "owner" {
-        return Err(ApiError::BadRequest(
-            "role must be 'member' or 'admin'".into(),
-        ));
-    }
+    // No need to validate req.role — serde deserialization into GroupRole already
+    // rejects unknown variants.
 
     // Verify conversation exists and get current epoch.
     let conv = ConversationRepo::find_by_id(&state.db, conversation_id)
@@ -288,7 +302,12 @@ pub async fn update_role(
         .map_err(db_err)?
         .ok_or(ApiError::Forbidden)?;
 
-    if caller_membership.role != "owner" {
+    let caller_role: GroupRole = caller_membership
+        .role
+        .parse()
+        .map_err(|e: String| ApiError::Internal(e))?;
+
+    if !caller_role.is_owner() {
         return Err(ApiError::Forbidden);
     }
 
@@ -298,6 +317,11 @@ pub async fn update_role(
             .await
             .map_err(db_err)?
             .ok_or_else(|| ApiError::NotFound("member not found".into()))?;
+
+    let target_role: GroupRole = target_membership
+        .role
+        .parse()
+        .map_err(|e: String| ApiError::Internal(e))?;
 
     let now = chrono::Utc::now().fixed_offset();
 
@@ -309,18 +333,21 @@ pub async fn update_role(
 
     // Prevent demoting the last owner — check inside the transaction to avoid
     // TOCTOU races where two concurrent demotions both see count==2.
-    if target_membership.role == "owner" && req.role == "member" {
+    if target_role.is_owner() && req.role == GroupRole::Member {
         let all_members = MembershipRepo::list_active(&txn, conversation_id)
             .await
             .map_err(db_err)?;
-        let owner_count = all_members.iter().filter(|m| m.role == "owner").count();
+        let owner_count = all_members
+            .iter()
+            .filter(|m| m.role.parse::<GroupRole>().is_ok_and(|r| r.is_owner()))
+            .count();
         if owner_count <= 1 {
             return Err(ApiError::BadRequest("cannot demote the last owner".into()));
         }
     }
 
     // Update role.
-    MembershipRepo::update_role(&txn, target_membership.id, &req.role)
+    MembershipRepo::update_role(&txn, target_membership.id, req.role.as_str())
         .await
         .map_err(db_err)?;
 
@@ -381,7 +408,7 @@ pub async fn list_members(
         .into_iter()
         .map(|m| MemberSummary {
             user_id: m.user_id,
-            role: m.role,
+            role: m.role.parse::<GroupRole>().unwrap_or(GroupRole::Member),
             joined_epoch: m.joined_epoch,
         })
         .collect();
