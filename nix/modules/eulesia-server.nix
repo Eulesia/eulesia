@@ -178,8 +178,8 @@ in {
     systemd.services.eulesia-server-db-setup = mkIf cfg.database.createLocally {
       description = "Eulesia v2 database setup (extensions + permissions)";
       wantedBy = ["multi-user.target"];
-      after = ["postgresql.service"];
-      requires = ["postgresql.service"];
+      after = ["postgresql.service" "postgresql-setup.service"];
+      requires = ["postgresql.service" "postgresql-setup.service"];
       path = [config.services.postgresql.package];
       serviceConfig = {
         Type = "oneshot";
