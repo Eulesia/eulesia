@@ -443,6 +443,12 @@ just rebuild-prod
 
 The API service runs database migration as a pre-start step, so configuration switches restart the app against the current schema automatically.
 
+That schema step is not enough to declare a deployment correct on its own. When a legacy `eulesia` database still exists alongside `eulesia_v2`, post-deploy verification must also compare live data presence between the two databases. At minimum:
+
+- `seaql_migrations` row count on `eulesia_v2` must match the local migration file count
+- `users` and `threads` on `eulesia_v2` must be non-empty
+- legacy usernames and club slugs from `eulesia` must also exist in `eulesia_v2`
+
 ## VM Target
 
 Use the VM configuration to validate the service stack without touching production:

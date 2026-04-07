@@ -102,7 +102,7 @@ SELECT version FROM seaql_migrations ORDER BY version;
 "
 ```
 
-Compare count with local: `ls crates/db/src/migration/m*.rs | wc -l`
+Compare count with local: `ls crates/db/src/migration/m[0-9]*.rs | wc -l`
 
 ### 5. Check server logs for errors
 

@@ -150,6 +150,86 @@ jobs:
           jq -e '.success == true and .data.registrationMode == "ftn-open"' /tmp/auth-config.json >/dev/null
           echo "All health checks passed."
 
+      - name: Data integrity checks
+        run: |
+          SSH_OPTS=(
+            -i "$HOME/.ssh/id_ed25519"
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o StrictHostKeyChecking=yes
+            -o BatchMode=yes
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=8
+            -o TCPKeepAlive=yes
+            -o ConnectTimeout=15
+            -o ConnectionAttempts=5
+            -o ControlMaster=auto
+            -o ControlPersist=10m
+            -o ControlPath="$EULESIA_SSH_CONTROL_DIR/%C"
+          )
+
+          EXPECTED_MIGRATIONS="$(find crates/db/src/migration -maxdepth 1 -name 'm[0-9]*.rs' | wc -l | tr -d ' ')"
+
+          ssh "${SSH_OPTS[@]}" root@"$EULESIA_PROD_TARGET_HOST" \
+            "EXPECTED_MIGRATIONS=$EXPECTED_MIGRATIONS bash -se" <<'REMOTE'
+          set -euo pipefail
+
+          PSQL="sudo -u postgres psql -X -A -t -v ON_ERROR_STOP=1"
+          actual_migrations="$($PSQL -d eulesia_v2 -c 'SELECT COUNT(*) FROM seaql_migrations;')"
+
+          echo "Expected migrations: $EXPECTED_MIGRATIONS"
+          echo "Applied migrations: $actual_migrations"
+
+          if [ "$actual_migrations" -ne "$EXPECTED_MIGRATIONS" ]; then
+            echo "::error::Migration count mismatch on production host"
+            exit 1
+          fi
+
+          users_v2="$($PSQL -d eulesia_v2 -c 'SELECT COUNT(*) FROM users;')"
+          threads_v2="$($PSQL -d eulesia_v2 -c 'SELECT COUNT(*) FROM threads;')"
+          clubs_v2="$($PSQL -d eulesia_v2 -c 'SELECT COUNT(*) FROM clubs;')"
+
+          echo "v2 users: $users_v2"
+          echo "v2 threads: $threads_v2"
+          echo "v2 clubs: $clubs_v2"
+
+          if [ "$users_v2" -eq 0 ] || [ "$threads_v2" -eq 0 ]; then
+            echo "::error::v2 database is unexpectedly empty"
+            exit 1
+          fi
+
+          legacy_db_present="$($PSQL -d postgres -c "SELECT COUNT(*) FROM pg_database WHERE datname = 'eulesia';")"
+          if [ "$legacy_db_present" -eq 0 ]; then
+            echo "Legacy database not present; skipping parity checks."
+            exit 0
+          fi
+
+          old_users="$(mktemp)"
+          new_users="$(mktemp)"
+          old_clubs="$(mktemp)"
+          new_clubs="$(mktemp)"
+          trap 'rm -f "$old_users" "$new_users" "$old_clubs" "$new_clubs"' EXIT
+
+          LC_ALL=C $PSQL -d eulesia -c 'SELECT username FROM users WHERE username IS NOT NULL ORDER BY username COLLATE "C"' > "$old_users"
+          LC_ALL=C $PSQL -d eulesia_v2 -c 'SELECT username FROM users WHERE username IS NOT NULL ORDER BY username COLLATE "C"' > "$new_users"
+          missing_usernames="$(comm -23 "$old_users" "$new_users" || true)"
+          if [ -n "$missing_usernames" ]; then
+            echo "::error::Legacy usernames missing from eulesia_v2"
+            printf '%s\n' "$missing_usernames"
+            exit 1
+          fi
+
+          LC_ALL=C $PSQL -d eulesia -c 'SELECT slug FROM clubs WHERE slug IS NOT NULL ORDER BY slug COLLATE "C"' > "$old_clubs"
+          LC_ALL=C $PSQL -d eulesia_v2 -c 'SELECT slug FROM clubs WHERE slug IS NOT NULL ORDER BY slug COLLATE "C"' > "$new_clubs"
+          missing_club_slugs="$(comm -23 "$old_clubs" "$new_clubs" || true)"
+          if [ -n "$missing_club_slugs" ]; then
+            echo "::error::Legacy club slugs missing from eulesia_v2"
+            printf '%s\n' "$missing_club_slugs"
+            exit 1
+          fi
+
+          echo "Data integrity checks passed."
+          REMOTE
+
       - name: Generate deploy summary
         if: always()
         run: |
