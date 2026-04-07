@@ -227,6 +227,123 @@ jobs:
             exit 1
           fi
 
+          legacy_public_members="$(mktemp)"
+          v2_public_members="$(mktemp)"
+          legacy_room_ids="$(mktemp)"
+          v2_private_room_ids="$(mktemp)"
+          legacy_room_members="$(mktemp)"
+          v2_private_room_members="$(mktemp)"
+          legacy_thread_ids="$(mktemp)"
+          v2_thread_ids="$(mktemp)"
+          legacy_comment_ids="$(mktemp)"
+          v2_comment_ids="$(mktemp)"
+          trap 'rm -f "$old_users" "$new_users" "$old_clubs" "$new_clubs" "$legacy_public_members" "$v2_public_members" "$legacy_room_ids" "$v2_private_room_ids" "$legacy_room_members" "$v2_private_room_members" "$legacy_thread_ids" "$v2_thread_ids" "$legacy_comment_ids" "$v2_comment_ids"' EXIT
+
+          LC_ALL=C $PSQL -d eulesia -c '
+            SELECT c.slug || E''\t'' || COUNT(cm.user_id)
+            FROM clubs c
+            LEFT JOIN club_members cm ON cm.club_id = c.id
+            GROUP BY c.slug
+            ORDER BY c.slug COLLATE "C"
+          ' > "$legacy_public_members"
+          LC_ALL=C $PSQL -d eulesia_v2 -c '
+            SELECT c.slug || E''\t'' || COUNT(cm.user_id)
+            FROM clubs c
+            LEFT JOIN club_members cm ON cm.club_id = c.id
+            WHERE c.is_public = TRUE
+            GROUP BY c.slug
+            ORDER BY c.slug COLLATE "C"
+          ' > "$v2_public_members"
+          if ! awk -F $'\t' '
+            NR==FNR { v2[$1]=$2; next }
+            {
+              if (!($1 in v2) || v2[$1] < $2) {
+                printf "%s\tlegacy=%s\tv2=%s\n", $1, $2, ($1 in v2 ? v2[$1] : "missing")
+                failed=1
+              }
+            }
+            END { exit failed ? 1 : 0 }
+          ' "$v2_public_members" "$legacy_public_members"; then
+            echo "::error::Legacy public club membership counts not satisfied in eulesia_v2"
+            exit 1
+          fi
+
+          LC_ALL=C $PSQL -d eulesia -c 'SELECT id::text FROM rooms ORDER BY id::text COLLATE "C"' > "$legacy_room_ids"
+          LC_ALL=C $PSQL -d eulesia_v2 -c 'SELECT id::text FROM clubs WHERE is_public = FALSE ORDER BY id::text COLLATE "C"' > "$v2_private_room_ids"
+          missing_room_ids="$(comm -23 "$legacy_room_ids" "$v2_private_room_ids" || true)"
+          if [ -n "$missing_room_ids" ]; then
+            echo "::error::Legacy room ids missing from private clubs in eulesia_v2"
+            printf '%s\n' "$missing_room_ids"
+            exit 1
+          fi
+
+          LC_ALL=C $PSQL -d eulesia -c '
+            SELECT r.id::text || E''\t'' || (1 + COUNT(rm.user_id))
+            FROM rooms r
+            LEFT JOIN room_members rm ON rm.room_id = r.id
+            GROUP BY r.id
+            ORDER BY r.id::text COLLATE "C"
+          ' > "$legacy_room_members"
+          LC_ALL=C $PSQL -d eulesia_v2 -c '
+            SELECT c.id::text || E''\t'' || COUNT(cm.user_id)
+            FROM clubs c
+            LEFT JOIN club_members cm ON cm.club_id = c.id
+            WHERE c.is_public = FALSE
+            GROUP BY c.id
+            ORDER BY c.id::text COLLATE "C"
+          ' > "$v2_private_room_members"
+          if ! awk -F $'\t' '
+            NR==FNR { v2[$1]=$2; next }
+            {
+              if (!($1 in v2) || v2[$1] < $2) {
+                printf "%s\tlegacy=%s\tv2=%s\n", $1, $2, ($1 in v2 ? v2[$1] : "missing")
+                failed=1
+              }
+            }
+            END { exit failed ? 1 : 0 }
+          ' "$v2_private_room_members" "$legacy_room_members"; then
+            echo "::error::Legacy room membership counts not satisfied in eulesia_v2"
+            exit 1
+          fi
+
+          LC_ALL=C $PSQL -d eulesia -c '
+            SELECT id
+            FROM (
+              SELECT id::text AS id FROM threads
+              UNION
+              SELECT id::text AS id FROM club_threads
+              UNION
+              SELECT id::text AS id FROM room_threads
+            ) AS legacy_threads
+            ORDER BY id COLLATE "C"
+          ' > "$legacy_thread_ids"
+          LC_ALL=C $PSQL -d eulesia_v2 -c 'SELECT id::text FROM threads ORDER BY id::text COLLATE "C"' > "$v2_thread_ids"
+          missing_thread_ids="$(comm -23 "$legacy_thread_ids" "$v2_thread_ids" || true)"
+          if [ -n "$missing_thread_ids" ]; then
+            echo "::error::Legacy thread ids missing from eulesia_v2"
+            printf '%s\n' "$missing_thread_ids"
+            exit 1
+          fi
+
+          LC_ALL=C $PSQL -d eulesia -c '
+            SELECT id
+            FROM (
+              SELECT id::text AS id FROM comments
+              UNION
+              SELECT id::text AS id FROM club_comments
+              UNION
+              SELECT id::text AS id FROM room_comments
+            ) AS legacy_comments
+            ORDER BY id COLLATE "C"
+          ' > "$legacy_comment_ids"
+          LC_ALL=C $PSQL -d eulesia_v2 -c 'SELECT id::text FROM comments ORDER BY id::text COLLATE "C"' > "$v2_comment_ids"
+          missing_comment_ids="$(comm -23 "$legacy_comment_ids" "$v2_comment_ids" || true)"
+          if [ -n "$missing_comment_ids" ]; then
+            echo "::error::Legacy comment ids missing from eulesia_v2"
+            printf '%s\n' "$missing_comment_ids"
+            exit 1
+          fi
+
           echo "Data integrity checks passed."
           REMOTE
 

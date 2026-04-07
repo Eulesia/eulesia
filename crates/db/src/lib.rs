@@ -1,4 +1,5 @@
 pub mod entities;
+pub mod legacy_import;
 pub mod migration;
 pub mod repo;
 

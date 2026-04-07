@@ -12,7 +12,7 @@ use tower_http::compression::CompressionLayer;
 use tower_http::cors::{AllowHeaders, AllowMethods, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
-use tracing::info;
+use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -31,6 +31,23 @@ async fn main() -> anyhow::Result<()> {
 
     let db = eulesia_db::connect(database_url).await?;
     eulesia_db::migrate(&db).await?;
+
+    if let Some(legacy_database_url) = config.resolved_legacy_database_url() {
+        match eulesia_db::connect(&legacy_database_url).await {
+            Ok(legacy_db) => {
+                let report =
+                    eulesia_db::legacy_import::import_legacy_social_data(&db, &legacy_db).await?;
+                info!(?report, "legacy social import finished");
+            }
+            Err(error) => {
+                warn!(
+                    database_url = %legacy_database_url,
+                    error = %error,
+                    "legacy database unavailable, skipping import"
+                );
+            }
+        }
+    }
 
     // Bootstrap admin accounts from SOPS-managed JSON file (idempotent).
     if let Some(ref path) = config.admin_bootstrap_file {
