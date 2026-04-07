@@ -174,6 +174,9 @@ jobs:
           set -euo pipefail
 
           PSQL="sudo -u postgres psql -X -A -t -v ON_ERROR_STOP=1"
+          psql_tsv() {
+            sudo -u postgres psql -X -A -t -F $'\t' -v ON_ERROR_STOP=1 "$@"
+          }
           actual_migrations="$($PSQL -d eulesia_v2 -c 'SELECT COUNT(*) FROM seaql_migrations;')"
 
           echo "Expected migrations: $EXPECTED_MIGRATIONS"
@@ -239,15 +242,15 @@ jobs:
           v2_comment_ids="$(mktemp)"
           trap 'rm -f "$old_users" "$new_users" "$old_clubs" "$new_clubs" "$legacy_public_members" "$v2_public_members" "$legacy_room_ids" "$v2_private_room_ids" "$legacy_room_members" "$v2_private_room_members" "$legacy_thread_ids" "$v2_thread_ids" "$legacy_comment_ids" "$v2_comment_ids"' EXIT
 
-          LC_ALL=C $PSQL -d eulesia -c '
-            SELECT c.slug || E''\t'' || COUNT(cm.user_id)
+          LC_ALL=C psql_tsv -d eulesia -c '
+            SELECT c.slug, COUNT(cm.user_id)
             FROM clubs c
             LEFT JOIN club_members cm ON cm.club_id = c.id
             GROUP BY c.slug
             ORDER BY c.slug COLLATE "C"
           ' > "$legacy_public_members"
-          LC_ALL=C $PSQL -d eulesia_v2 -c '
-            SELECT c.slug || E''\t'' || COUNT(cm.user_id)
+          LC_ALL=C psql_tsv -d eulesia_v2 -c '
+            SELECT c.slug, COUNT(cm.user_id)
             FROM clubs c
             LEFT JOIN club_members cm ON cm.club_id = c.id
             WHERE c.is_public = TRUE
@@ -277,15 +280,15 @@ jobs:
             exit 1
           fi
 
-          LC_ALL=C $PSQL -d eulesia -c '
-            SELECT r.id::text || E''\t'' || (1 + COUNT(rm.user_id))
+          LC_ALL=C psql_tsv -d eulesia -c '
+            SELECT r.id::text, (1 + COUNT(rm.user_id))
             FROM rooms r
             LEFT JOIN room_members rm ON rm.room_id = r.id
             GROUP BY r.id
             ORDER BY r.id::text COLLATE "C"
           ' > "$legacy_room_members"
-          LC_ALL=C $PSQL -d eulesia_v2 -c '
-            SELECT c.id::text || E''\t'' || COUNT(cm.user_id)
+          LC_ALL=C psql_tsv -d eulesia_v2 -c '
+            SELECT c.id::text, COUNT(cm.user_id)
             FROM clubs c
             LEFT JOIN club_members cm ON cm.club_id = c.id
             WHERE c.is_public = FALSE
@@ -317,7 +320,13 @@ jobs:
             ) AS legacy_threads
             ORDER BY id COLLATE "C"
           ' > "$legacy_thread_ids"
-          LC_ALL=C $PSQL -d eulesia_v2 -c 'SELECT id::text FROM threads ORDER BY id::text COLLATE "C"' > "$v2_thread_ids"
+          LC_ALL=C $PSQL -d eulesia_v2 -c '
+            SELECT id
+            FROM (
+              SELECT id::text AS id FROM threads
+            ) AS v2_threads
+            ORDER BY id COLLATE "C"
+          ' > "$v2_thread_ids"
           missing_thread_ids="$(comm -23 "$legacy_thread_ids" "$v2_thread_ids" || true)"
           if [ -n "$missing_thread_ids" ]; then
             echo "::error::Legacy thread ids missing from eulesia_v2"
@@ -336,7 +345,13 @@ jobs:
             ) AS legacy_comments
             ORDER BY id COLLATE "C"
           ' > "$legacy_comment_ids"
-          LC_ALL=C $PSQL -d eulesia_v2 -c 'SELECT id::text FROM comments ORDER BY id::text COLLATE "C"' > "$v2_comment_ids"
+          LC_ALL=C $PSQL -d eulesia_v2 -c '
+            SELECT id
+            FROM (
+              SELECT id::text AS id FROM comments
+            ) AS v2_comments
+            ORDER BY id COLLATE "C"
+          ' > "$v2_comment_ids"
           missing_comment_ids="$(comm -23 "$legacy_comment_ids" "$v2_comment_ids" || true)"
           if [ -n "$missing_comment_ids" ]; then
             echo "::error::Legacy comment ids missing from eulesia_v2"
