@@ -53,9 +53,13 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.EULESIA_DEPLOY_SSH_KEY }}
         run: |
           install -d -m 700 "$HOME/.ssh"
-          install -d -m 700 "$HOME/.ssh/controlmasters"
+          SSH_CONTROL_DIR="/tmp/eulesia-prod-ssh-${GITHUB_RUN_ID}-${GITHUB_JOB}"
+          rm -rf "$SSH_CONTROL_DIR"
+          install -d -m 700 "$SSH_CONTROL_DIR"
           echo "$DEPLOY_SSH_KEY" > "$HOME/.ssh/id_ed25519"
           chmod 600 "$HOME/.ssh/id_ed25519"
+
+          echo "EULESIA_SSH_CONTROL_DIR=$SSH_CONTROL_DIR" >> "$GITHUB_ENV"
 
           # Validate key
           ssh-keygen -l -f "$HOME/.ssh/id_ed25519" || { echo "::error::Invalid SSH key"; exit 1; }
@@ -75,7 +79,7 @@ jobs:
             -o ConnectionAttempts=5
             -o ControlMaster=auto
             -o ControlPersist=10m
-            -o ControlPath="$HOME/.ssh/controlmasters/%C"
+            -o ControlPath="$SSH_CONTROL_DIR/%C"
           )
 
           ssh "${SSH_OPTS[@]}" root@"$EULESIA_PROD_TARGET_HOST" "echo 'SSH connection OK'"
@@ -97,7 +101,7 @@ jobs:
             -o ConnectionAttempts=5
             -o ControlMaster=auto
             -o ControlPersist=10m
-            -o ControlPath="$HOME/.ssh/controlmasters/%C"
+            -o ControlPath="$EULESIA_SSH_CONTROL_DIR/%C"
           )
 
           export NIX_SSHOPTS="${SSH_OPTS[*]}"
@@ -118,14 +122,14 @@ jobs:
             -o ConnectionAttempts=5
             -o ControlMaster=auto
             -o ControlPersist=10m
-            -o ControlPath="$HOME/.ssh/controlmasters/%C"
+            -o ControlPath="$EULESIA_SSH_CONTROL_DIR/%C"
           )
 
           echo "Waiting for API to become healthy..."
           HEALTHY=false
           for i in $(seq 1 30); do
             if ssh "${SSH_OPTS[@]}" root@"$EULESIA_PROD_TARGET_HOST" \
-              "curl -fsS -H 'Host: eulesia.org' http://127.0.0.1:8080/api/v1/health" 2>/dev/null; then
+              "curl -fsS http://127.0.0.1:3002/api/v1/health" 2>/dev/null; then
               HEALTHY=true
               break
             fi
@@ -140,7 +144,7 @@ jobs:
 
           echo "Verifying auth config..."
           ssh "${SSH_OPTS[@]}" root@"$EULESIA_PROD_TARGET_HOST" \
-            "curl -fsS -H 'Host: eulesia.org' http://127.0.0.1:8080/api/v1/auth/config" \
+            "curl -fsS http://127.0.0.1:3002/api/v1/auth/config" \
             > /tmp/auth-config.json
           cat /tmp/auth-config.json
           jq -e '.success == true and .data.registrationMode == "ftn-open"' /tmp/auth-config.json >/dev/null
