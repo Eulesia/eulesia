@@ -5,18 +5,22 @@ use axum_extra::extract::CookieJar;
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
-    QueryFilter, QueryOrder, Statement, TransactionTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::warn;
 use uuid::Uuid;
+use webauthn_rs::prelude::*;
 
 use crate::{AppConfig, AppState};
 use eulesia_auth::password;
 use eulesia_common::error::ApiError;
 use eulesia_common::types::{AppealStatus, Id, ReportStatus, SanctionType, new_id};
-use eulesia_db::entities::{admin_accounts, admin_sessions, comments, threads};
+use eulesia_db::entities::{
+    admin_accounts, admin_passkeys, admin_pending_sessions, admin_recovery_codes, admin_sessions,
+    comments, threads,
+};
 use eulesia_db::repo::outbox_helpers::emit_event;
 use eulesia_db::repo::{appeals::AppealRepo, sanctions::SanctionRepo, users::UserRepo};
 
@@ -127,7 +131,199 @@ async fn require_admin(
         .map_err(db_err)?
         .ok_or(ApiError::Unauthorized)?;
 
+    // Enforce 2FA enrollment
+    let enrolled = has_2fa_enrolled(&admin, &*state.db).await?;
+    if !enrolled {
+        return Err(ApiError::Forbidden);
+    }
+
     Ok(admin)
+}
+
+// ---------------------------------------------------------------------------
+// Pending session cookie helpers
+// ---------------------------------------------------------------------------
+
+const PENDING_SESSION_MAX_AGE_MINUTES: i64 = 10;
+
+fn build_pending_session_cookie(token: &str, config: &AppConfig) -> Cookie<'static> {
+    let mut cookie = Cookie::build(("admin_pending_session", token.to_string()))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .max_age(time::Duration::minutes(PENDING_SESSION_MAX_AGE_MINUTES))
+        .build();
+    if config.cookie_secure {
+        cookie.set_secure(true);
+    }
+    if let Some(ref domain) = config.cookie_domain {
+        cookie.set_domain(domain.clone());
+    }
+    cookie
+}
+
+fn clear_pending_session_cookie(config: &AppConfig) -> Cookie<'static> {
+    let mut cookie = Cookie::build("admin_pending_session")
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .max_age(time::Duration::ZERO)
+        .build();
+    if config.cookie_secure {
+        cookie.set_secure(true);
+    }
+    if let Some(ref domain) = config.cookie_domain {
+        cookie.set_domain(domain.clone());
+    }
+    cookie
+}
+
+// ---------------------------------------------------------------------------
+// 2FA helpers
+// ---------------------------------------------------------------------------
+
+async fn create_pending_session(
+    admin_id: Uuid,
+    db: &sea_orm::DatabaseConnection,
+) -> Result<String, ApiError> {
+    let raw_token = generate_admin_token();
+    let token_hash = sha256_hex(&raw_token);
+    let now = chrono::Utc::now().fixed_offset();
+    let expires_at = now + chrono::Duration::minutes(PENDING_SESSION_MAX_AGE_MINUTES);
+    admin_pending_sessions::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        admin_id: Set(admin_id),
+        token_hash: Set(token_hash),
+        webauthn_state: Set(None),
+        totp_secret_temp: Set(None),
+        expires_at: Set(expires_at),
+        created_at: Set(now),
+    }
+    .insert(db)
+    .await
+    .map_err(db_err)?;
+    Ok(raw_token)
+}
+
+async fn require_pending_session(
+    jar: &CookieJar,
+    state: &AppState,
+) -> Result<(admin_pending_sessions::Model, admin_accounts::Model), ApiError> {
+    let token = jar
+        .get("admin_pending_session")
+        .map(|c| c.value().to_string())
+        .ok_or(ApiError::Unauthorized)?;
+    let token_hash = sha256_hex(&token);
+    let pending = admin_pending_sessions::Entity::find()
+        .filter(admin_pending_sessions::Column::TokenHash.eq(&token_hash))
+        .one(&*state.db)
+        .await
+        .map_err(db_err)?
+        .ok_or(ApiError::Unauthorized)?;
+    let now = chrono::Utc::now().fixed_offset();
+    if pending.expires_at < now {
+        let _ = admin_pending_sessions::Entity::delete_by_id(pending.id)
+            .exec(&*state.db)
+            .await;
+        return Err(ApiError::Unauthorized);
+    }
+    let admin = admin_accounts::Entity::find_by_id(pending.admin_id)
+        .one(&*state.db)
+        .await
+        .map_err(db_err)?
+        .ok_or(ApiError::Unauthorized)?;
+    Ok((pending, admin))
+}
+
+async fn has_2fa_enrolled(
+    admin: &admin_accounts::Model,
+    db: &sea_orm::DatabaseConnection,
+) -> Result<bool, ApiError> {
+    if admin.totp_enabled {
+        return Ok(true);
+    }
+    let passkey_count = admin_passkeys::Entity::find()
+        .filter(admin_passkeys::Column::AdminId.eq(admin.id))
+        .count(db)
+        .await
+        .map_err(db_err)?;
+    Ok(passkey_count > 0)
+}
+
+async fn promote_to_full_session(
+    pending: &admin_pending_sessions::Model,
+    state: &AppState,
+) -> Result<String, ApiError> {
+    admin_pending_sessions::Entity::delete_by_id(pending.id)
+        .exec(&*state.db)
+        .await
+        .map_err(db_err)?;
+    let raw_token = generate_admin_token();
+    let token_hash = sha256_hex(&raw_token);
+    let now = chrono::Utc::now().fixed_offset();
+    let expires_at = now + chrono::Duration::days(ADMIN_SESSION_MAX_AGE_DAYS);
+    admin_sessions::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        admin_id: Set(pending.admin_id),
+        token_hash: Set(token_hash),
+        ip_address: sea_orm::ActiveValue::NotSet,
+        user_agent: sea_orm::ActiveValue::NotSet,
+        expires_at: Set(expires_at),
+        created_at: Set(now),
+    }
+    .insert(&*state.db)
+    .await
+    .map_err(db_err)?;
+    admin_accounts::Entity::update_many()
+        .col_expr(
+            admin_accounts::Column::LastSeenAt,
+            sea_orm::sea_query::Expr::value(now),
+        )
+        .filter(admin_accounts::Column::Id.eq(pending.admin_id))
+        .exec(&*state.db)
+        .await
+        .map_err(db_err)?;
+    Ok(raw_token)
+}
+
+async fn generate_recovery_codes(
+    admin_id: Uuid,
+    db: &sea_orm::DatabaseConnection,
+) -> Result<Vec<String>, ApiError> {
+    use base64::Engine;
+    use rand::RngCore;
+    admin_recovery_codes::Entity::delete_many()
+        .filter(admin_recovery_codes::Column::AdminId.eq(admin_id))
+        .exec(db)
+        .await
+        .map_err(db_err)?;
+    let now = chrono::Utc::now().fixed_offset();
+    let mut codes = Vec::with_capacity(8);
+    for _ in 0..8 {
+        let mut bytes = [0u8; 5];
+        rand::rng().fill_bytes(&mut bytes);
+        let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(bytes)
+            .to_uppercase();
+        let code = if raw.len() >= 8 {
+            format!("{}-{}", &raw[..4], &raw[4..8])
+        } else {
+            raw.clone()
+        };
+        let code_hash = sha256_hex(&code);
+        admin_recovery_codes::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            admin_id: Set(admin_id),
+            code_hash: Set(code_hash),
+            used_at: Set(None),
+            created_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .map_err(db_err)?;
+        codes.push(code);
+    }
+    Ok(codes)
 }
 
 fn paginate(
@@ -268,11 +464,17 @@ struct AdminLoginRequest {
     password: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminLoginResponse {
+    status: String,
+}
+
 async fn admin_login(
     State(state): State<AppState>,
     jar: CookieJar,
     Json(req): Json<AdminLoginRequest>,
-) -> Result<(CookieJar, Json<AdminProfile>), ApiError> {
+) -> Result<(CookieJar, Json<AdminLoginResponse>), ApiError> {
     // Look up admin by username
     let admin = admin_accounts::Entity::find()
         .filter(admin_accounts::Column::Username.eq(&req.username))
@@ -293,36 +495,21 @@ async fn admin_login(
         return Err(ApiError::Unauthorized);
     }
 
-    // Generate session token
-    let raw_token = generate_admin_token();
-    let token_hash = sha256_hex(&raw_token);
-    let now = chrono::Utc::now().fixed_offset();
-    let expires_at = now + chrono::Duration::days(ADMIN_SESSION_MAX_AGE_DAYS);
-
-    // Store session — omit ip_address/user_agent (INET type needs explicit cast)
-    admin_sessions::ActiveModel {
-        id: Set(Uuid::now_v7()),
-        admin_id: Set(admin.id),
-        token_hash: Set(token_hash),
-        ip_address: sea_orm::ActiveValue::NotSet,
-        user_agent: sea_orm::ActiveValue::NotSet,
-        expires_at: Set(expires_at),
-        created_at: Set(now),
-    }
-    .insert(&*state.db)
-    .await
-    .map_err(db_err)?;
-
-    // Update last_seen_at
-    let mut active: admin_accounts::ActiveModel = admin.clone().into();
-    active.last_seen_at = Set(Some(now));
-    active.update(&*state.db).await.map_err(db_err)?;
-
-    // Set cookie
-    let cookie = build_admin_session_cookie(&raw_token, &state.config);
+    let raw_token = create_pending_session(admin.id, &state.db).await?;
+    let cookie = build_pending_session_cookie(&raw_token, &state.config);
     let jar = jar.add(cookie);
-
-    Ok((jar, Json(AdminProfile::from(&admin))))
+    let enrolled = has_2fa_enrolled(&admin, &state.db).await?;
+    let status = if enrolled {
+        "totp_required"
+    } else {
+        "setup_required"
+    };
+    Ok((
+        jar,
+        Json(AdminLoginResponse {
+            status: status.into(),
+        }),
+    ))
 }
 
 /// GET /admin/auth/me -- return the authenticated admin's profile.
@@ -400,6 +587,628 @@ async fn admin_change_password(
     active.update(&*state.db).await.map_err(db_err)?;
 
     Ok(Json(serde_json::json!({ "changed": true })))
+}
+
+// ===========================================================================
+// 2FA — TOTP Endpoints
+// ===========================================================================
+
+/// POST /admin/auth/totp/setup/begin
+async fn admin_totp_setup_begin(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    // Accept pending OR full session
+    let (pending, admin) = if let Ok(result) = require_pending_session(&jar, &state).await {
+        result
+    } else {
+        let admin = require_admin(&jar, &state).await?;
+        let raw_token = create_pending_session(admin.id, &state.db).await?;
+        let pending = {
+            let token_hash = sha256_hex(&raw_token);
+            admin_pending_sessions::Entity::find()
+                .filter(admin_pending_sessions::Column::TokenHash.eq(&token_hash))
+                .one(&*state.db)
+                .await
+                .map_err(db_err)?
+                .ok_or(ApiError::Internal("pending session not found".into()))?
+        };
+        (pending, admin)
+    };
+
+    let secret = totp_rs::Secret::generate_secret();
+    let secret_base32 = secret.to_encoded().to_string();
+    let totp = totp_rs::TOTP::new(
+        totp_rs::Algorithm::SHA1,
+        6,
+        1,
+        30,
+        secret
+            .to_bytes()
+            .map_err(|e| ApiError::Internal(format!("totp secret: {e}")))?,
+        Some("Eulesia Admin".to_string()),
+        admin.username.clone(),
+    )
+    .map_err(|e| ApiError::Internal(format!("totp init: {e}")))?;
+
+    let qr_png = totp
+        .get_qr_png()
+        .map_err(|e| ApiError::Internal(format!("qr: {e}")))?;
+    let qr_uri = format!(
+        "data:image/png;base64,{}",
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &qr_png)
+    );
+    let mut active: admin_pending_sessions::ActiveModel = pending.into();
+    active.totp_secret_temp = Set(Some(secret_base32.clone()));
+    active.update(&*state.db).await.map_err(db_err)?;
+
+    Ok(Json(serde_json::json!({
+        "secret": secret_base32,
+        "qrUri": qr_uri,
+    })))
+}
+
+/// POST /admin/auth/totp/setup/confirm
+#[derive(Deserialize)]
+struct TotpConfirmRequest {
+    code: String,
+}
+
+async fn admin_totp_setup_confirm(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(req): Json<TotpConfirmRequest>,
+) -> Result<(CookieJar, Json<serde_json::Value>), ApiError> {
+    let (pending, admin) = require_pending_session(&jar, &state).await?;
+    let secret_b32 = pending
+        .totp_secret_temp
+        .as_deref()
+        .ok_or_else(|| ApiError::BadRequest("no TOTP setup in progress".into()))?;
+
+    let secret = totp_rs::Secret::Encoded(secret_b32.to_string());
+    let totp = totp_rs::TOTP::new(
+        totp_rs::Algorithm::SHA1,
+        6,
+        1,
+        30,
+        secret
+            .to_bytes()
+            .map_err(|e| ApiError::Internal(format!("totp secret: {e}")))?,
+        Some("Eulesia Admin".to_string()),
+        admin.username.clone(),
+    )
+    .map_err(|e| ApiError::Internal(format!("totp init: {e}")))?;
+
+    if !totp
+        .check_current(&req.code)
+        .map_err(|e| ApiError::Internal(format!("totp check: {e}")))?
+    {
+        return Err(ApiError::BadRequest("invalid TOTP code".into()));
+    }
+
+    // Enable TOTP on admin account
+    let mut active: admin_accounts::ActiveModel = admin.clone().into();
+    active.totp_secret = Set(Some(secret_b32.to_string()));
+    active.totp_enabled = Set(true);
+    active.updated_at = Set(chrono::Utc::now().fixed_offset());
+    active.update(&*state.db).await.map_err(db_err)?;
+
+    // Generate recovery codes
+    let codes = generate_recovery_codes(admin.id, &state.db).await?;
+
+    // Promote to full session
+    let raw_token = promote_to_full_session(&pending, &state).await?;
+    let mut jar = jar.add(build_admin_session_cookie(&raw_token, &state.config));
+    jar = jar.add(clear_pending_session_cookie(&state.config));
+
+    Ok((
+        jar,
+        Json(serde_json::json!({
+            "profile": AdminProfile::from(&admin),
+            "recoveryCodes": codes,
+        })),
+    ))
+}
+
+/// POST /admin/auth/totp/verify
+#[derive(Deserialize)]
+struct TotpVerifyRequest {
+    code: String,
+}
+
+async fn admin_totp_verify(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(req): Json<TotpVerifyRequest>,
+) -> Result<(CookieJar, Json<AdminProfile>), ApiError> {
+    let (pending, admin) = require_pending_session(&jar, &state).await?;
+    let secret_b32 = admin
+        .totp_secret
+        .as_deref()
+        .ok_or_else(|| ApiError::BadRequest("TOTP not configured".into()))?;
+
+    let secret = totp_rs::Secret::Encoded(secret_b32.to_string());
+    let totp = totp_rs::TOTP::new(
+        totp_rs::Algorithm::SHA1,
+        6,
+        1,
+        30,
+        secret
+            .to_bytes()
+            .map_err(|e| ApiError::Internal(format!("totp secret: {e}")))?,
+        Some("Eulesia Admin".to_string()),
+        admin.username.clone(),
+    )
+    .map_err(|e| ApiError::Internal(format!("totp init: {e}")))?;
+
+    if !totp
+        .check_current(&req.code)
+        .map_err(|e| ApiError::Internal(format!("totp check: {e}")))?
+    {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let raw_token = promote_to_full_session(&pending, &state).await?;
+    let mut jar = jar.add(build_admin_session_cookie(&raw_token, &state.config));
+    jar = jar.add(clear_pending_session_cookie(&state.config));
+
+    Ok((jar, Json(AdminProfile::from(&admin))))
+}
+
+/// POST /admin/auth/totp/recovery
+#[derive(Deserialize)]
+struct TotpRecoveryRequest {
+    code: String,
+}
+
+async fn admin_totp_recovery(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(req): Json<TotpRecoveryRequest>,
+) -> Result<(CookieJar, Json<AdminProfile>), ApiError> {
+    let (pending, admin) = require_pending_session(&jar, &state).await?;
+    let code_hash = sha256_hex(&req.code);
+
+    let recovery = admin_recovery_codes::Entity::find()
+        .filter(admin_recovery_codes::Column::AdminId.eq(admin.id))
+        .filter(admin_recovery_codes::Column::CodeHash.eq(&code_hash))
+        .filter(admin_recovery_codes::Column::UsedAt.is_null())
+        .one(&*state.db)
+        .await
+        .map_err(db_err)?
+        .ok_or(ApiError::Unauthorized)?;
+
+    // Mark as used
+    let mut active: admin_recovery_codes::ActiveModel = recovery.into();
+    active.used_at = Set(Some(chrono::Utc::now().fixed_offset()));
+    active.update(&*state.db).await.map_err(db_err)?;
+
+    let raw_token = promote_to_full_session(&pending, &state).await?;
+    let mut jar = jar.add(build_admin_session_cookie(&raw_token, &state.config));
+    jar = jar.add(clear_pending_session_cookie(&state.config));
+
+    Ok((jar, Json(AdminProfile::from(&admin))))
+}
+
+// ===========================================================================
+// 2FA — Passkey Endpoints
+// ===========================================================================
+
+/// POST /admin/auth/passkey/register/begin
+async fn admin_passkey_register_begin(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Result<(CookieJar, Json<CreationChallengeResponse>), ApiError> {
+    // Accept pending or full session
+    let (pending, admin) = if let Ok(result) = require_pending_session(&jar, &state).await {
+        result
+    } else {
+        let admin = require_admin(&jar, &state).await?;
+        let raw_token = create_pending_session(admin.id, &state.db).await?;
+        let pending = {
+            let token_hash = sha256_hex(&raw_token);
+            admin_pending_sessions::Entity::find()
+                .filter(admin_pending_sessions::Column::TokenHash.eq(&token_hash))
+                .one(&*state.db)
+                .await
+                .map_err(db_err)?
+                .ok_or(ApiError::Internal("pending session not found".into()))?
+        };
+        (pending, admin)
+    };
+
+    // Load existing passkeys for exclusion
+    let existing = admin_passkeys::Entity::find()
+        .filter(admin_passkeys::Column::AdminId.eq(admin.id))
+        .all(&*state.db)
+        .await
+        .map_err(db_err)?;
+
+    let exclude: Vec<CredentialID> = existing
+        .iter()
+        .filter_map(|pk| {
+            serde_json::from_value::<Passkey>(pk.credential.clone())
+                .ok()
+                .map(|p| p.cred_id().clone())
+        })
+        .collect();
+
+    let (ccr, reg_state) = state
+        .webauthn
+        .start_passkey_registration(admin.id, &admin.username, &admin.name, Some(exclude))
+        .map_err(|e| ApiError::Internal(format!("webauthn register begin: {e}")))?;
+
+    // Store reg_state in pending session
+    let state_json = serde_json::to_value(&reg_state)
+        .map_err(|e| ApiError::Internal(format!("serialize reg_state: {e}")))?;
+    let mut active: admin_pending_sessions::ActiveModel = pending.into();
+    active.webauthn_state = Set(Some(state_json));
+    active.update(&*state.db).await.map_err(db_err)?;
+
+    let jar = jar.add(build_pending_session_cookie(
+        jar.get("admin_pending_session")
+            .map(|c| c.value())
+            .unwrap_or(""),
+        &state.config,
+    ));
+
+    Ok((jar, Json(ccr)))
+}
+
+/// POST /admin/auth/passkey/register/finish
+#[derive(Deserialize)]
+struct PasskeyRegisterFinishRequest {
+    credential: RegisterPublicKeyCredential,
+    name: String,
+}
+
+async fn admin_passkey_register_finish(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(req): Json<PasskeyRegisterFinishRequest>,
+) -> Result<(CookieJar, Json<serde_json::Value>), ApiError> {
+    let (pending, admin) = require_pending_session(&jar, &state).await?;
+    let state_json = pending
+        .webauthn_state
+        .as_ref()
+        .ok_or_else(|| ApiError::BadRequest("no passkey registration in progress".into()))?;
+
+    let reg_state: PasskeyRegistration = serde_json::from_value(state_json.clone())
+        .map_err(|e| ApiError::Internal(format!("deserialize reg_state: {e}")))?;
+
+    let passkey = state
+        .webauthn
+        .finish_passkey_registration(&req.credential, &reg_state)
+        .map_err(|e| ApiError::BadRequest(format!("webauthn register finish: {e}")))?;
+
+    let credential_json = serde_json::to_value(&passkey)
+        .map_err(|e| ApiError::Internal(format!("serialize passkey: {e}")))?;
+    let now = chrono::Utc::now().fixed_offset();
+
+    admin_passkeys::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        admin_id: Set(admin.id),
+        credential_id: Set(passkey.cred_id().to_vec()),
+        credential: Set(credential_json),
+        name: Set(req.name),
+        created_at: Set(now),
+        last_used_at: Set(None),
+    }
+    .insert(&*state.db)
+    .await
+    .map_err(db_err)?;
+
+    // Check if this was a pending-flow (initial setup) or full-session flow
+    let has_full_session = jar.get("admin_session").is_some();
+
+    if has_full_session {
+        // Full session flow — clean up pending session, no promotion needed
+        let _ = admin_pending_sessions::Entity::delete_by_id(pending.id)
+            .exec(&*state.db)
+            .await;
+        let jar = jar.add(clear_pending_session_cookie(&state.config));
+        Ok((
+            jar,
+            Json(serde_json::json!({
+                "profile": null,
+                "recoveryCodes": null,
+            })),
+        ))
+    } else {
+        // Pending flow — generate recovery codes and promote
+        let codes = generate_recovery_codes(admin.id, &state.db).await?;
+        let raw_token = promote_to_full_session(&pending, &state).await?;
+        let mut jar = jar.add(build_admin_session_cookie(&raw_token, &state.config));
+        jar = jar.add(clear_pending_session_cookie(&state.config));
+        Ok((
+            jar,
+            Json(serde_json::json!({
+                "profile": AdminProfile::from(&admin),
+                "recoveryCodes": codes,
+            })),
+        ))
+    }
+}
+
+/// POST /admin/auth/passkey/auth/begin
+async fn admin_passkey_auth_begin(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Result<(CookieJar, Json<RequestChallengeResponse>), ApiError> {
+    // If pending session exists, scope to that admin's passkeys
+    let (pending, passkeys) =
+        if let Ok((pending, admin)) = require_pending_session(&jar, &state).await {
+            let pks = admin_passkeys::Entity::find()
+                .filter(admin_passkeys::Column::AdminId.eq(admin.id))
+                .all(&*state.db)
+                .await
+                .map_err(db_err)?;
+            let passkeys: Vec<Passkey> = pks
+                .iter()
+                .filter_map(|pk| serde_json::from_value(pk.credential.clone()).ok())
+                .collect();
+            (pending, passkeys)
+        } else {
+            // Load ALL passkeys for discoverable credential flow
+            let all_pks = admin_passkeys::Entity::find()
+                .all(&*state.db)
+                .await
+                .map_err(db_err)?;
+            let passkeys: Vec<Passkey> = all_pks
+                .iter()
+                .filter_map(|pk| serde_json::from_value(pk.credential.clone()).ok())
+                .collect();
+            // Create a temporary pending session (pick first admin or fail)
+            if passkeys.is_empty() {
+                return Err(ApiError::BadRequest("no passkeys registered".into()));
+            }
+            let admin_id = all_pks[0].admin_id;
+            let raw_token = create_pending_session(admin_id, &state.db).await?;
+            let token_hash = sha256_hex(&raw_token);
+            let pending = admin_pending_sessions::Entity::find()
+                .filter(admin_pending_sessions::Column::TokenHash.eq(&token_hash))
+                .one(&*state.db)
+                .await
+                .map_err(db_err)?
+                .ok_or(ApiError::Internal("pending session not found".into()))?;
+            (pending, passkeys)
+        };
+
+    if passkeys.is_empty() {
+        return Err(ApiError::BadRequest("no passkeys registered".into()));
+    }
+
+    let (rcr, auth_state) = state
+        .webauthn
+        .start_passkey_authentication(&passkeys)
+        .map_err(|e| ApiError::Internal(format!("webauthn auth begin: {e}")))?;
+
+    let state_json = serde_json::to_value(&auth_state)
+        .map_err(|e| ApiError::Internal(format!("serialize auth_state: {e}")))?;
+    let mut active: admin_pending_sessions::ActiveModel = pending.into();
+    active.webauthn_state = Set(Some(state_json));
+    active.update(&*state.db).await.map_err(db_err)?;
+
+    let pending_cookie_value = jar
+        .get("admin_pending_session")
+        .map(|c| c.value().to_string())
+        .unwrap_or_default();
+    let jar = jar.add(build_pending_session_cookie(
+        &pending_cookie_value,
+        &state.config,
+    ));
+
+    Ok((jar, Json(rcr)))
+}
+
+/// POST /admin/auth/passkey/auth/finish
+async fn admin_passkey_auth_finish(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(credential): Json<PublicKeyCredential>,
+) -> Result<(CookieJar, Json<AdminProfile>), ApiError> {
+    let (pending, _admin) = require_pending_session(&jar, &state).await?;
+    let state_json = pending
+        .webauthn_state
+        .as_ref()
+        .ok_or_else(|| ApiError::BadRequest("no passkey auth in progress".into()))?;
+
+    let auth_state: PasskeyAuthentication = serde_json::from_value(state_json.clone())
+        .map_err(|e| ApiError::Internal(format!("deserialize auth_state: {e}")))?;
+
+    let auth_result = state
+        .webauthn
+        .finish_passkey_authentication(&credential, &auth_state)
+        .map_err(|e| ApiError::BadRequest(format!("webauthn auth finish: {e}")))?;
+
+    // Find passkey by credential ID
+    let cred_id_bytes = auth_result.cred_id().to_vec();
+    let passkey_record = admin_passkeys::Entity::find()
+        .filter(admin_passkeys::Column::CredentialId.eq(cred_id_bytes))
+        .one(&*state.db)
+        .await
+        .map_err(db_err)?
+        .ok_or(ApiError::Unauthorized)?;
+
+    // Update counter and last_used_at
+    let now = chrono::Utc::now().fixed_offset();
+    let mut active: admin_passkeys::ActiveModel = passkey_record.clone().into();
+    // Update the credential with new counter
+    let mut stored_passkey: Passkey = serde_json::from_value(passkey_record.credential.clone())
+        .map_err(|e| ApiError::Internal(format!("deserialize passkey: {e}")))?;
+    stored_passkey.update_credential(&auth_result);
+    active.credential = Set(serde_json::to_value(&stored_passkey)
+        .map_err(|e| ApiError::Internal(format!("serialize passkey: {e}")))?);
+    active.last_used_at = Set(Some(now));
+    active.update(&*state.db).await.map_err(db_err)?;
+
+    // Load the admin that owns this passkey
+    let admin = admin_accounts::Entity::find_by_id(passkey_record.admin_id)
+        .one(&*state.db)
+        .await
+        .map_err(db_err)?
+        .ok_or(ApiError::Unauthorized)?;
+
+    let raw_token = promote_to_full_session(&pending, &state).await?;
+    let mut jar = jar.add(build_admin_session_cookie(&raw_token, &state.config));
+    jar = jar.add(clear_pending_session_cookie(&state.config));
+
+    Ok((jar, Json(AdminProfile::from(&admin))))
+}
+
+/// GET /admin/auth/passkey
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PasskeyInfo {
+    id: Uuid,
+    name: String,
+    created_at: String,
+    last_used_at: Option<String>,
+}
+
+async fn admin_passkey_list(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Result<Json<Vec<PasskeyInfo>>, ApiError> {
+    let admin = require_admin(&jar, &state).await?;
+    let passkeys = admin_passkeys::Entity::find()
+        .filter(admin_passkeys::Column::AdminId.eq(admin.id))
+        .order_by_asc(admin_passkeys::Column::CreatedAt)
+        .all(&*state.db)
+        .await
+        .map_err(db_err)?;
+
+    let items = passkeys
+        .into_iter()
+        .map(|pk| PasskeyInfo {
+            id: pk.id,
+            name: pk.name,
+            created_at: pk.created_at.to_rfc3339(),
+            last_used_at: pk.last_used_at.map(|t| t.to_rfc3339()),
+        })
+        .collect();
+
+    Ok(Json(items))
+}
+
+/// DELETE /admin/auth/passkey/{id}
+async fn admin_passkey_delete(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let admin = require_admin(&jar, &state).await?;
+    let result = admin_passkeys::Entity::delete_many()
+        .filter(admin_passkeys::Column::Id.eq(id))
+        .filter(admin_passkeys::Column::AdminId.eq(admin.id))
+        .exec(&*state.db)
+        .await
+        .map_err(db_err)?;
+
+    if result.rows_affected == 0 {
+        return Err(ApiError::NotFound("passkey not found".into()));
+    }
+
+    Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+// ===========================================================================
+// 2FA — Status & Reset
+// ===========================================================================
+
+/// GET /admin/auth/2fa/status
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TwoFactorStatus {
+    totp_enabled: bool,
+    passkeys: Vec<PasskeyInfo>,
+    unused_recovery_codes: u64,
+}
+
+async fn admin_2fa_status(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Result<Json<TwoFactorStatus>, ApiError> {
+    let admin = require_admin(&jar, &state).await?;
+
+    let passkeys = admin_passkeys::Entity::find()
+        .filter(admin_passkeys::Column::AdminId.eq(admin.id))
+        .order_by_asc(admin_passkeys::Column::CreatedAt)
+        .all(&*state.db)
+        .await
+        .map_err(db_err)?;
+
+    let passkey_infos: Vec<PasskeyInfo> = passkeys
+        .into_iter()
+        .map(|pk| PasskeyInfo {
+            id: pk.id,
+            name: pk.name,
+            created_at: pk.created_at.to_rfc3339(),
+            last_used_at: pk.last_used_at.map(|t| t.to_rfc3339()),
+        })
+        .collect();
+
+    let unused_codes = admin_recovery_codes::Entity::find()
+        .filter(admin_recovery_codes::Column::AdminId.eq(admin.id))
+        .filter(admin_recovery_codes::Column::UsedAt.is_null())
+        .count(&*state.db)
+        .await
+        .map_err(db_err)?;
+
+    Ok(Json(TwoFactorStatus {
+        totp_enabled: admin.totp_enabled,
+        passkeys: passkey_infos,
+        unused_recovery_codes: unused_codes,
+    }))
+}
+
+/// POST /admin/auth/2fa/reset
+#[derive(Deserialize)]
+struct TwoFactorResetRequest {
+    password: String,
+}
+
+async fn admin_2fa_reset(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(req): Json<TwoFactorResetRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let admin = require_admin(&jar, &state).await?;
+
+    // Verify password
+    let pw = req.password.clone();
+    let hash = admin.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || password::verify_password(&pw, &hash))
+        .await
+        .map_err(|_| ApiError::Internal("password verification task failed".into()))?
+        .map_err(|_| ApiError::Internal("password hashing error".into()))?;
+
+    if !valid {
+        return Err(ApiError::BadRequest("incorrect password".into()));
+    }
+
+    // Delete all passkeys
+    admin_passkeys::Entity::delete_many()
+        .filter(admin_passkeys::Column::AdminId.eq(admin.id))
+        .exec(&*state.db)
+        .await
+        .map_err(db_err)?;
+
+    // Disable TOTP
+    let mut active: admin_accounts::ActiveModel = admin.clone().into();
+    active.totp_secret = Set(None);
+    active.totp_enabled = Set(false);
+    active.updated_at = Set(chrono::Utc::now().fixed_offset());
+    active.update(&*state.db).await.map_err(db_err)?;
+
+    // Delete recovery codes
+    admin_recovery_codes::Entity::delete_many()
+        .filter(admin_recovery_codes::Column::AdminId.eq(admin.id))
+        .exec(&*state.db)
+        .await
+        .map_err(db_err)?;
+
+    Ok(Json(serde_json::json!({ "reset": true })))
 }
 
 // ===========================================================================
@@ -2676,6 +3485,36 @@ pub fn routes() -> Router<AppState> {
         .route("/admin/auth/login", post(admin_login))
         .route("/admin/auth/logout", post(admin_logout))
         .route("/admin/auth/change-password", post(admin_change_password))
+        // 2FA — TOTP
+        .route("/admin/auth/totp/setup/begin", post(admin_totp_setup_begin))
+        .route(
+            "/admin/auth/totp/setup/confirm",
+            post(admin_totp_setup_confirm),
+        )
+        .route("/admin/auth/totp/verify", post(admin_totp_verify))
+        .route("/admin/auth/totp/recovery", post(admin_totp_recovery))
+        // 2FA — Passkey
+        .route(
+            "/admin/auth/passkey/register/begin",
+            post(admin_passkey_register_begin),
+        )
+        .route(
+            "/admin/auth/passkey/register/finish",
+            post(admin_passkey_register_finish),
+        )
+        .route(
+            "/admin/auth/passkey/auth/begin",
+            post(admin_passkey_auth_begin),
+        )
+        .route(
+            "/admin/auth/passkey/auth/finish",
+            post(admin_passkey_auth_finish),
+        )
+        .route("/admin/auth/passkey", get(admin_passkey_list))
+        .route("/admin/auth/passkey/{id}", delete(admin_passkey_delete))
+        // 2FA — Status & Reset
+        .route("/admin/auth/2fa/status", get(admin_2fa_status))
+        .route("/admin/auth/2fa/reset", post(admin_2fa_reset))
         // Dashboard
         .route("/admin/dashboard", get(admin_dashboard))
         // Users

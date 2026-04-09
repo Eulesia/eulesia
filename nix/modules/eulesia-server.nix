@@ -153,6 +153,12 @@ in {
       };
     };
 
+    webauthnRpId = mkOption {
+      type = types.str;
+      default = "localhost";
+      description = "WebAuthn Relying Party ID (domain name, e.g. 'eulesia.org').";
+    };
+
     bootstrapAdminAccountsFile = mkOption {
       type = types.nullOr types.path;
       default = config.services.eulesia.auth.bootstrapAdminAccountsFile or null;
@@ -225,6 +231,7 @@ in {
             then "true"
             else "";
           EULESIA_FRONTEND_ORIGIN = cfg.frontendOrigin;
+          EULESIA_WEBAUTHN_RP_ID = cfg.webauthnRpId;
           EULESIA_COOKIE_SECURE =
             if cfg.cookieSecure
             then "true"

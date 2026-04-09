@@ -54,6 +54,10 @@ reqwest = { version = "0.12", features = ["json"] }
 dashmap = "6"
 meilisearch-sdk = "0.28"
 ts-rs = { version = "12", features = ["uuid-impl", "chrono-impl", "serde-json-impl"] }
+totp-rs = { version = "5", features = ["gen_secret", "qr"] }
+url = "2"
+webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
+webauthn-rs-proto = "0.5"
 webp = { version = "0.3" }
 
 [workspace.lints.rust]

@@ -1,6 +1,7 @@
 mod config;
 
 use std::sync::Arc;
+use webauthn_rs::prelude::*;
 
 use axum::http::{HeaderValue, header};
 use axum::middleware::{self, Next};
@@ -87,12 +88,32 @@ async fn main() -> anyhow::Result<()> {
         info!("FTN (Idura) authentication enabled");
     }
 
+    // WebAuthn (passkey) configuration
+    let rp_origin = url::Url::parse(
+        config
+            .frontend_origin
+            .split(',')
+            .next()
+            .unwrap_or(&config.frontend_origin)
+            .trim(),
+    )
+    .expect("EULESIA_FRONTEND_ORIGIN must be a valid URL");
+    let webauthn = Arc::new(
+        WebauthnBuilder::new(&config.webauthn_rp_id, &rp_origin)
+            .expect("invalid EULESIA_WEBAUTHN_RP_ID")
+            .rp_name("Eulesia Admin")
+            .build()
+            .expect("failed to build Webauthn"),
+    );
+    info!(rp_id = %config.webauthn_rp_id, "WebAuthn configured");
+
     let state = AppState {
         db: Arc::clone(&db),
         config: Arc::new(app_config),
         search_client: search_client.clone(),
         ws_registry,
         ftn_config,
+        webauthn,
     };
 
     let cors = CorsLayer::new()

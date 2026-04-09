@@ -22,6 +22,7 @@ mod m20260407_000019_places_source_identity_index;
 mod m20260408_000020_clean_municipality_duplicates;
 mod m20260408_000021_thread_scope_personal;
 mod m20260409_000022_municipality_designation;
+mod m20260409_000023_admin_2fa;
 
 pub struct Migrator;
 
@@ -51,6 +52,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260408_000020_clean_municipality_duplicates::Migration),
             Box::new(m20260408_000021_thread_scope_personal::Migration),
             Box::new(m20260409_000022_municipality_designation::Migration),
+            Box::new(m20260409_000023_admin_2fa::Migration),
         ]
     }
 }

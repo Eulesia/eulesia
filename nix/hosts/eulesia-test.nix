@@ -222,6 +222,7 @@
       package = eulesiaPackages.server;
       frontendDir = "${eulesiaPackages.frontendTest}";
       frontendOrigin = "https://test.eulesia.org";
+      webauthnRpId = "test.eulesia.org";
       cookieDomain = ".test.eulesia.org";
       cookieSecure = true;
       sessionSecretFile = config.sops.secrets."session-secret".path;

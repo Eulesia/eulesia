@@ -544,12 +544,7 @@ class ApiClient {
   async adminLogin(
     username: string,
     password: string,
-  ): Promise<{
-    id: string;
-    username: string;
-    email: string | null;
-    name: string;
-  }> {
+  ): Promise<{ status: string }> {
     return this.request("/admin/auth/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
@@ -567,6 +562,124 @@ class ApiClient {
     await this.request("/admin/auth/change-password", {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  // 2FA — TOTP
+  async adminTotpSetupBegin(): Promise<{ secret: string; qrUri: string }> {
+    return this.request("/admin/auth/totp/setup/begin", { method: "POST" });
+  }
+
+  async adminTotpSetupConfirm(code: string): Promise<{
+    profile: {
+      id: string;
+      username: string;
+      name: string;
+      email: string | null;
+    };
+    recoveryCodes: string[];
+  }> {
+    return this.request("/admin/auth/totp/setup/confirm", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async adminTotpVerify(code: string): Promise<{
+    id: string;
+    username: string;
+    name: string;
+    email: string | null;
+  }> {
+    return this.request("/admin/auth/totp/verify", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async adminTotpRecovery(code: string): Promise<{
+    id: string;
+    username: string;
+    name: string;
+    email: string | null;
+  }> {
+    return this.request("/admin/auth/totp/recovery", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  // 2FA — Passkey
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async adminPasskeyRegisterBegin(): Promise<any> {
+    return this.request("/admin/auth/passkey/register/begin", {
+      method: "POST",
+    });
+  }
+
+  async adminPasskeyRegisterFinish(
+    credential: unknown,
+    name: string,
+  ): Promise<{
+    profile: {
+      id: string;
+      username: string;
+      name: string;
+      email: string | null;
+    } | null;
+    recoveryCodes: string[] | null;
+  }> {
+    return this.request("/admin/auth/passkey/register/finish", {
+      method: "POST",
+      body: JSON.stringify({ credential, name }),
+    });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async adminPasskeyAuthBegin(): Promise<any> {
+    return this.request("/admin/auth/passkey/auth/begin", { method: "POST" });
+  }
+
+  async adminPasskeyAuthFinish(credential: unknown): Promise<{
+    id: string;
+    username: string;
+    name: string;
+    email: string | null;
+  }> {
+    return this.request("/admin/auth/passkey/auth/finish", {
+      method: "POST",
+      body: JSON.stringify(credential),
+    });
+  }
+
+  async adminPasskeyList(): Promise<
+    { id: string; name: string; createdAt: string; lastUsedAt: string | null }[]
+  > {
+    return this.request("/admin/auth/passkey");
+  }
+
+  async adminPasskeyDelete(id: string): Promise<void> {
+    await this.request(`/admin/auth/passkey/${id}`, { method: "DELETE" });
+  }
+
+  // 2FA — Status & Reset
+  async admin2faStatus(): Promise<{
+    totpEnabled: boolean;
+    passkeys: {
+      id: string;
+      name: string;
+      createdAt: string;
+      lastUsedAt: string | null;
+    }[];
+    unusedRecoveryCodes: number;
+  }> {
+    return this.request("/admin/auth/2fa/status");
+  }
+
+  async admin2faReset(password: string): Promise<void> {
+    await this.request("/admin/auth/2fa/reset", {
+      method: "POST",
+      body: JSON.stringify({ password }),
     });
   }
 

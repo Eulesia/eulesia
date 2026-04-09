@@ -67,6 +67,9 @@ pub mod waitlist;
 
 // Admin / Site
 pub mod admin_accounts;
+pub mod admin_passkeys;
+pub mod admin_pending_sessions;
+pub mod admin_recovery_codes;
 pub mod admin_sessions;
 pub mod invite_codes;
 pub mod site_settings;

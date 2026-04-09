@@ -63,6 +63,10 @@ pub struct Config {
     /// When set, the server serves the frontend directly — no separate webserver needed.
     #[arg(long, env = "EULESIA_FRONTEND_DIR")]
     pub frontend_dir: Option<String>,
+
+    /// WebAuthn Relying Party ID (typically the domain, e.g. "eulesia.org")
+    #[arg(long, env = "EULESIA_WEBAUTHN_RP_ID", default_value = "localhost")]
+    pub webauthn_rp_id: String,
 }
 
 impl Config {

@@ -44,6 +44,7 @@ pub struct AppState {
     pub search_client: Option<Arc<SearchClient>>,
     pub ws_registry: ConnectionRegistry,
     pub ftn_config: Option<Arc<ftn::FtnConfig>>,
+    pub webauthn: Arc<webauthn_rs::prelude::Webauthn>,
 }
 
 impl Deref for AppState {
