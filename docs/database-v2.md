@@ -119,46 +119,27 @@ CREATE TABLE devices (
     display_name    varchar(255),
     platform        varchar(20) NOT NULL,
 
-    identity_key    bytea NOT NULL,
+    identity_key    bytea,
 
     last_seen_at    timestamptz,
     revoked_at      timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
 
     CHECK (platform IN ('web', 'android', 'ios', 'desktop')),
-    CHECK (octet_length(identity_key) > 0)
+    CHECK (identity_key IS NULL OR octet_length(identity_key) > 0)
 );
 
 CREATE UNIQUE INDEX uq_devices_id_user ON devices (id, user_id);
 CREATE INDEX idx_devices_user_active ON devices (user_id) WHERE revoked_at IS NULL;
 ```
 
-### device_signed_pre_keys
-
-Rotation history for signed pre-keys. Current key = latest row.
-
-```sql
-CREATE TABLE device_signed_pre_keys (
-    id              uuid PRIMARY KEY,
-    device_id       uuid NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    key_id          bigint NOT NULL,
-    key_data        bytea NOT NULL,
-    signature       bytea NOT NULL,
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    superseded_at   timestamptz,
-
-    CHECK (octet_length(key_data) > 0),
-    CHECK (octet_length(signature) > 0),
-    UNIQUE (device_id, key_id)
-);
-
-CREATE INDEX idx_spk_device_current ON device_signed_pre_keys (device_id, created_at DESC)
-    WHERE superseded_at IS NULL;
-```
+`identity_key` is retained only for historical compatibility and is nullable on
+current branches. Active E2EE device identity lives in the Matrix device key
+columns added later.
 
 ### one_time_pre_keys
 
-Consumable pre-keys for X3DH session establishment.
+Consumable keys for Matrix one-time-key and fallback-key claims.
 
 ```sql
 CREATE TABLE one_time_pre_keys (

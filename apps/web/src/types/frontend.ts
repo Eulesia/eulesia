@@ -238,8 +238,17 @@ export interface Conversation {
 export interface DirectMessage {
   id: string;
   conversationId: string;
-  content: string;
+  /** Plaintext content — may be null/absent for E2EE messages. */
+  content?: string | null;
   contentHtml?: string;
+  /** Base64url-encoded ciphertext envelope, present for E2EE messages. */
+  ciphertext?: string;
+  /** Device ID of the sender, present for E2EE messages. */
+  senderDeviceId?: string;
+  /** Raw sender ID from the v2 API — used when author is not populated. */
+  senderId?: string;
+  /** Message type (text, media, system, to_device, etc.). */
+  messageType?: string;
   author: UserSummary | null;
   editedAt?: string | null;
   isHidden?: boolean;
@@ -254,6 +263,53 @@ export type FeedScope =
   | "personal"
   | "all";
 
+// E2EE Device types
+export interface Device {
+  id: string;
+  userId?: string;
+  displayName?: string | null;
+  platform: string;
+  createdAt: string;
+  lastActiveAt?: string;
+}
+
+export interface ConversationWithMessages {
+  id: string;
+  encryption?: "e2ee" | "none";
+  otherUser: UserSummary | null;
+  /** All members — used by DM page to derive otherUser. */
+  members?: Array<{
+    userId: string;
+    name: string;
+    avatarUrl?: string | null;
+  }>;
+  messages: DirectMessage[];
+}
+
+export interface GroupMember {
+  userId: string;
+  name: string;
+  avatarUrl?: string | null;
+  role: "owner" | "member";
+  joinedEpoch: number;
+}
+
+export interface GroupConversationDetail {
+  id: string;
+  name: string;
+  description?: string | null;
+  encryption: string;
+  currentEpoch: number;
+  members: GroupMember[];
+  messages: DirectMessage[];
+  protocolMessages: DirectMessage[];
+}
+
+export interface CreateGroupData {
+  name: string;
+  description?: string;
+  members: string[];
+}
 export type SortBy = "recent" | "new" | "top";
 
 export type TopPeriod = "day" | "week" | "month" | "year";

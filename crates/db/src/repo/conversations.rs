@@ -87,10 +87,15 @@ impl ConversationRepo {
         conversation_id: Uuid,
         before: Option<Uuid>,
         limit: u64,
+        message_type: Option<&str>,
     ) -> Result<Vec<messages::Model>, DbErr> {
         let mut query = messages::Entity::find()
             .filter(messages::Column::ConversationId.eq(conversation_id))
             .order_by_desc(messages::Column::Id);
+
+        if let Some(message_type) = message_type {
+            query = query.filter(messages::Column::MessageType.eq(message_type));
+        }
 
         if let Some(cursor) = before {
             query = query.filter(messages::Column::Id.lt(cursor));

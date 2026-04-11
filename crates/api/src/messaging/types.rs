@@ -6,6 +6,9 @@ use eulesia_db::entities::messages;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Maximum number of members in a group conversation (including creator).
+pub const MAX_GROUP_MEMBERS: usize = 50;
+
 // ---------------------------------------------------------------------------
 // Request types
 // ---------------------------------------------------------------------------
@@ -35,10 +38,14 @@ pub struct SendMessageRequest {
     pub message_type: MessageType,
     /// E2EE: base64-encoded ciphertext (group/channel messages).
     pub ciphertext: Option<String>,
-    /// E2EE: per-device ciphertexts (direct messages).
+    /// E2EE: per-device ciphertexts (direct messages and hidden Matrix
+    /// to-device protocol messages in group conversations).
     pub device_ciphertexts: Option<HashMap<Uuid, String>>,
     /// Plaintext content (for encryption: "none" conversations).
     pub content: Option<String>,
+    /// The sender's device ID (required for E2EE sends from browser sessions
+    /// that don't carry device_id in the auth token).
+    pub sender_device_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,6 +77,7 @@ pub struct DeliveryAck {
 pub struct MessageCursorParams {
     pub before: Option<Uuid>,
     pub limit: Option<u64>,
+    pub message_type: Option<MessageType>,
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +144,8 @@ pub struct LastMessageSummary {
 #[serde(rename_all = "camelCase")]
 pub struct MemberSummary {
     pub user_id: Uuid,
+    pub name: String,
+    pub avatar_url: Option<String>,
     pub role: GroupRole,
     pub joined_epoch: i64,
 }

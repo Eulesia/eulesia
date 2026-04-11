@@ -77,6 +77,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn bind_device_returns_true_when_session_is_updated() {
+        let db = MockDatabase::new(DatabaseBackend::Postgres)
+            .append_exec_results([MockExecResult {
+                last_insert_id: 0,
+                rows_affected: 1,
+            }])
+            .into_connection();
+
+        let bound = SessionRepo::bind_device(&db, Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7())
+            .await
+            .unwrap();
+
+        assert!(bound);
+    }
+
+    #[tokio::test]
+    async fn bind_device_returns_false_when_session_is_not_updated() {
+        let db = MockDatabase::new(DatabaseBackend::Postgres)
+            .append_exec_results([MockExecResult {
+                last_insert_id: 0,
+                rows_affected: 0,
+            }])
+            .into_connection();
+
+        let bound = SessionRepo::bind_device(&db, Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7())
+            .await
+            .unwrap();
+
+        assert!(!bound);
+    }
+
+    #[tokio::test]
+    async fn revoke_unbound_sessions_for_user_returns_count() {
+        let db = MockDatabase::new(DatabaseBackend::Postgres)
+            .append_exec_results([MockExecResult {
+                last_insert_id: 0,
+                rows_affected: 2,
+            }])
+            .into_connection();
+
+        let revoked = SessionRepo::revoke_unbound_sessions_for_user(&db, Uuid::now_v7())
+            .await
+            .unwrap();
+
+        assert_eq!(revoked, 2);
+    }
+
+    #[tokio::test]
     async fn cleanup_expired_returns_count() {
         let db = MockDatabase::new(DatabaseBackend::Postgres)
             .append_exec_results([MockExecResult {

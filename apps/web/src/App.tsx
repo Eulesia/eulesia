@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { AdminAuthProvider, useAdminAuth } from "./hooks/useAdminAuth";
+import { DeviceProvider } from "./hooks/useDevice";
 import { SocketProvider } from "./hooks/useSocket";
 import { GuideProvider } from "./components/guide";
 import { CookieConsent } from "./components/common/CookieConsent";
@@ -81,6 +82,16 @@ const MessagesPage = lazy(() =>
 const DMConversationPage = lazy(() =>
   import("./pages/DMConversationPage").then((m) => ({
     default: m.DMConversationPage,
+  })),
+);
+const GroupConversationPage = lazy(() =>
+  import("./pages/GroupConversationPage").then((m) => ({
+    default: m.GroupConversationPage,
+  })),
+);
+const CreateGroupPage = lazy(() =>
+  import("./pages/CreateGroupPage").then((m) => ({
+    default: m.CreateGroupPage,
   })),
 );
 const TermsPage = lazy(() =>
@@ -344,6 +355,26 @@ function AppRoutes() {
           }
         />
         <Route
+          path="/messages/new-group"
+          element={
+            <ProtectedRoute>
+              <PageErrorBoundary>
+                <CreateGroupPage />
+              </PageErrorBoundary>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/messages/group/:conversationId"
+          element={
+            <ProtectedRoute>
+              <PageErrorBoundary>
+                <GroupConversationPage />
+              </PageErrorBoundary>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/messages/:conversationId"
           element={
             <ProtectedRoute>
@@ -602,17 +633,19 @@ function App() {
           <DeepLinkHandler />
           <BackButtonHandler />
           <AuthProvider>
-            <AdminAuthProvider>
-              <SocketProvider>
-                <NativePushHandler />
-                <GuideProvider>
-                  <AppRoutes />
-                  <CookieConsent />
-                  <PWAUpdatePrompt />
-                  <PWAInstallBanner />
-                </GuideProvider>
-              </SocketProvider>
-            </AdminAuthProvider>
+            <DeviceProvider>
+              <AdminAuthProvider>
+                <SocketProvider>
+                  <NativePushHandler />
+                  <GuideProvider>
+                    <AppRoutes />
+                    <CookieConsent />
+                    <PWAUpdatePrompt />
+                    <PWAInstallBanner />
+                  </GuideProvider>
+                </SocketProvider>
+              </AdminAuthProvider>
+            </DeviceProvider>
           </AuthProvider>
         </BrowserRouter>
       </PWAProvider>

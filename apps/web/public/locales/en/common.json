@@ -242,5 +242,9 @@
     "offlineTitle": "No connection",
     "offlineDesc": "Check your network connection and try again.",
     "retry": "Try again"
+  },
+  "e2ee": {
+    "deviceReadyTitle": "Secure messaging ready",
+    "deviceReadyBody": "This browser can now join end-to-end encrypted conversations. Manage devices anytime from Settings."
   }
 }

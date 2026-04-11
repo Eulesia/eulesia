@@ -39,6 +39,59 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (() => {
+        if (!("serviceWorker" in navigator)) return;
+
+        const legacyCachePrefixes = ["workbox-", "eulesia-"];
+
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .getRegistrations()
+            .then((registrations) =>
+              Promise.all(
+                registrations.map((registration) => {
+                  const scriptUrls = [
+                    registration.active?.scriptURL,
+                    registration.installing?.scriptURL,
+                    registration.waiting?.scriptURL,
+                  ].filter(Boolean);
+
+                  const hasLegacyWorker = scriptUrls.some((scriptUrl) => {
+                    try {
+                      return new URL(scriptUrl).pathname === "/sw.js";
+                    } catch {
+                      return String(scriptUrl).endsWith("/sw.js");
+                    }
+                  });
+
+                  return hasLegacyWorker
+                    ? registration.unregister()
+                    : Promise.resolve(false);
+                }),
+              ),
+            )
+            .catch(() => {});
+
+          if (!("caches" in window)) return;
+
+          caches
+            .keys()
+            .then((cacheNames) =>
+              Promise.all(
+                cacheNames
+                  .filter((cacheName) =>
+                    legacyCachePrefixes.some((prefix) =>
+                      cacheName.startsWith(prefix),
+                    ),
+                  )
+                  .map((cacheName) => caches.delete(cacheName)),
+              ),
+            )
+            .catch(() => {});
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

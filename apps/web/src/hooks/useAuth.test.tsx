@@ -12,6 +12,7 @@ vi.mock("../lib/api", () => ({
     getCurrentUser: vi.fn(),
     requestMagicLink: vi.fn(),
     logout: vi.fn(),
+    revokeDevice: vi.fn(),
     updateProfile: vi.fn().mockResolvedValue({}),
   },
   setUnauthorizedHandler: vi.fn(),
@@ -144,6 +145,7 @@ describe("useAuth", () => {
     });
 
     expect(api.logout).toHaveBeenCalled();
+    expect(api.revokeDevice).not.toHaveBeenCalled();
     expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.currentUser).toBeNull();
   });

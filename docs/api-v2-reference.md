@@ -176,8 +176,9 @@ Return the authenticated user's profile.
 
 ### POST /devices
 
-Register a new device with its identity key and initial signed pre-key.
-Maximum 10 active devices per user.
+Register a new device shell. Matrix device keys and one-time keys are uploaded
+afterward through the Matrix-specific key endpoints. Maximum 10 active devices
+per user.
 
 **Auth**: required
 
@@ -187,12 +188,7 @@ Maximum 10 active devices per user.
 {
   "display_name": "string | null",
   "platform": "web | android | ios | desktop",
-  "identity_key": "base64 string",
-  "signed_pre_key": {
-    "key_id": 1,
-    "key_data": "base64 string",
-    "signature": "base64 string"
-  }
+  "pairing_code": "string | null"
 }
 ```
 
@@ -234,72 +230,16 @@ Revoke a device. Also revokes all sessions bound to the device.
 
 **Response** `200`: empty body.
 
-### POST /devices/{id}/pre-keys
+### Matrix key endpoints
 
-Upload new pre-key material for a device: an optional new signed pre-key
-(supersedes the current one) and/or a batch of one-time pre-keys.
+The active E2EE runtime uses:
 
-**Auth**: required (must own the device)
+- `POST /devices/{id}/matrix/keys/upload`
+- `POST /devices/matrix/keys/query`
+- `POST /devices/matrix/keys/claim`
 
-**Request body**:
-
-```json
-{
-  "signed_pre_key": {
-    "key_id": 2,
-    "key_data": "base64 string",
-    "signature": "base64 string"
-  },
-  "one_time_keys": [
-    { "key_id": 100, "key_data": "base64 string" },
-    { "key_id": 101, "key_data": "base64 string" }
-  ]
-}
-```
-
-Both `signed_pre_key` and `one_time_keys` are optional (but at least one
-should be provided).
-
-**Response** `200`:
-
-```json
-{
-  "keys_remaining": 42
-}
-```
-
-`keys_remaining` is the count of unconsumed one-time pre-keys for this device.
-
-### GET /devices/{id}/pre-key-bundle
-
-Fetch a pre-key bundle for establishing an E2EE session with a target device.
-Consumes one one-time pre-key (if available).
-
-**Auth**: required
-
-**Query parameters**:
-
-- `user_id` (uuid, required) -- the owner of the target device
-
-**Response** `200`:
-
-```json
-{
-  "device_id": "uuid",
-  "identity_key": "base64 string",
-  "signed_pre_key": {
-    "key_id": 1,
-    "key_data": "base64 string",
-    "signature": "base64 string"
-  },
-  "one_time_pre_key": {
-    "key_id": 100,
-    "key_data": "base64 string"
-  }
-}
-```
-
-`one_time_pre_key` may be `null` if the device has no remaining OTKs.
+These endpoints carry Matrix-compatible device keys, signed one-time keys, and
+fallback keys for the browser `OlmMachine`.
 
 ---
 

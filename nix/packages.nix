@@ -7,18 +7,19 @@
     pnpmDeps = pkgs.fetchPnpmDeps {
       pname = "eulesia";
       src = repoSrc;
-      hash = "sha256-wgdJqz4mmyc2UoAXcCHkzKSxbFqyWSQYHR/4TM/ulcA=";
+      hash = "sha256-qlldk/k7fMgpNkusOj9Z63eMaiYrh/N+E189h0hUT2M=";
       fetcherVersion = 3;
     };
 
     frontend = import ./frontend.nix {
       inherit pkgs pnpmDeps;
       src = repoSrc;
+      pwaMode = "disabled";
     };
     frontendTest = import ./frontend.nix {
       inherit pkgs pnpmDeps;
       src = repoSrc;
-      pwaMode = "self-destroying";
+      pwaMode = "disabled";
     };
     fullBuild = pkgs.runCommand "eulesia-build" {} ''
       mkdir -p $out

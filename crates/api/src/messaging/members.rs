@@ -10,6 +10,7 @@ use eulesia_common::error::ApiError;
 use eulesia_common::types::{ConversationType, GroupRole, new_id};
 use eulesia_db::entities::{conversation_epochs, membership_events, memberships};
 use eulesia_db::repo::conversations::ConversationRepo;
+use eulesia_db::repo::devices::DeviceRepo;
 use eulesia_db::repo::epochs::EpochRepo;
 use eulesia_db::repo::memberships::MembershipRepo;
 use eulesia_db::repo::users::UserRepo;
@@ -65,8 +66,8 @@ pub async fn invite(
         return Err(ApiError::Forbidden);
     }
 
-    // Verify target user exists.
-    UserRepo::find_by_id(&state.db, req.user_id)
+    // Verify target user exists (keep the model for the response).
+    let target_user = UserRepo::find_by_id(&state.db, req.user_id)
         .await
         .map_err(db_err)?
         .ok_or_else(|| ApiError::NotFound("user not found".into()))?;
@@ -78,6 +79,26 @@ pub async fn invite(
         .is_some()
     {
         return Err(ApiError::Conflict("user is already a member".into()));
+    }
+
+    // E2EE groups require all members to have a registered device.
+    if !DeviceRepo::has_enrolled_device(&*state.db, req.user_id)
+        .await
+        .map_err(db_err)?
+    {
+        return Err(ApiError::BadRequest("user has no registered device".into()));
+    }
+
+    // Enforce group size limit.
+    let current_count = MembershipRepo::list_active(&*state.db, conversation_id)
+        .await
+        .map_err(db_err)?
+        .len();
+    if current_count >= super::types::MAX_GROUP_MEMBERS {
+        return Err(ApiError::BadRequest(format!(
+            "groups cannot have more than {} members",
+            super::types::MAX_GROUP_MEMBERS
+        )));
     }
 
     let now = chrono::Utc::now().fixed_offset();
@@ -147,8 +168,12 @@ pub async fn invite(
         .await
         .map_err(|e| ApiError::Database(e.to_string()))?;
 
+    let (uname, uavatar) = (target_user.name, target_user.avatar_url);
+
     Ok(Json(MemberSummary {
         user_id: req.user_id,
+        name: uname,
+        avatar_url: uavatar,
         role: GroupRole::Member,
         joined_epoch: new_epoch,
     }))
@@ -378,8 +403,16 @@ pub async fn update_role(
         .await
         .map_err(|e| ApiError::Database(e.to_string()))?;
 
+    let user = UserRepo::find_by_id(&state.db, target_user_id)
+        .await
+        .map_err(db_err)?;
+    let (uname, uavatar) =
+        user.map_or_else(|| ("Unknown".into(), None), |u| (u.name, u.avatar_url));
+
     Ok(Json(MemberSummary {
         user_id: target_user_id,
+        name: uname,
+        avatar_url: uavatar,
         role: req.role,
         joined_epoch: target_membership.joined_epoch,
     }))
@@ -410,12 +443,24 @@ pub async fn list_members(
         .await
         .map_err(db_err)?;
 
+    let user_ids: Vec<uuid::Uuid> = members.iter().map(|m| m.user_id).collect();
+    let users = UserRepo::find_by_ids(&state.db, &user_ids)
+        .await
+        .map_err(db_err)?;
+    let user_map: std::collections::HashMap<uuid::Uuid, _> =
+        users.into_iter().map(|u| (u.id, u)).collect();
+
     let items = members
         .into_iter()
-        .map(|m| MemberSummary {
-            user_id: m.user_id,
-            role: m.role.parse::<GroupRole>().unwrap_or(GroupRole::Member),
-            joined_epoch: m.joined_epoch,
+        .map(|m| {
+            let user = user_map.get(&m.user_id);
+            MemberSummary {
+                user_id: m.user_id,
+                name: user.map_or_else(|| "Unknown".into(), |u| u.name.clone()),
+                avatar_url: user.and_then(|u| u.avatar_url.clone()),
+                role: m.role.parse::<GroupRole>().unwrap_or(GroupRole::Member),
+                joined_epoch: m.joined_epoch,
+            }
         })
         .collect();
 

@@ -17,7 +17,7 @@
 │  Authentication, authorization, session management           │
 │  Public content CRUD, search indexing, feed generation        │
 │  Encrypted message relay (opaque blobs, no decryption)       │
-│  Device registration, pre-key distribution                   │
+│  Device registration, Matrix key directory                   │
 │  Media upload/storage, moderation, admin API                 │
 │  Background jobs, notifications, scheduled imports           │
 └────────────────────────────┬─────────────────────────────────┘
@@ -36,7 +36,7 @@ The server is **blind to private message content**.
 
 - **Identity**: user accounts, device registration, identity verification (FTN/EUDI)
 - **Sessions**: authentication, token issuance, session lifecycle
-- **Device registry**: public key storage, pre-key bundles, device trust metadata
+- **Device registry**: device metadata, Matrix device keys, trust metadata
 - **Public content**: agora threads, comments, votes, institutional imports
 - **Social graph**: follows, blocks, mutes — enforced server-side
 - **Groups**: membership state, role assignments, epoch tracking
@@ -62,7 +62,7 @@ The client is the **authority for cryptographic operations and private content r
 
 ### Owns
 
-- **E2EE crypto**: key generation, ratchet state, encrypt/decrypt, session management
+- **E2EE crypto**: Matrix Olm/Megolm state, encrypt/decrypt, session management
 - **Key storage**: device private keys in secure local storage (IndexedDB/Keychain)
 - **Trust UX**: device verification, safety number comparison, trust warnings
 - **Message rendering**: decrypt and display private messages
@@ -82,15 +82,15 @@ The client is the **authority for cryptographic operations and private content r
 
 These cross the boundary and need coordinated design:
 
-| Concern                   | Server                                     | Client                                       |
-| ------------------------- | ------------------------------------------ | -------------------------------------------- |
-| **Device registration**   | Stores public keys, serves pre-key bundles | Generates keys, uploads, manages local store |
-| **Session establishment** | Relays key exchange messages               | Runs X3DH / session protocol                 |
-| **Group membership**      | Tracks members, enforces roles             | Distributes group keys on membership change  |
-| **Delivery receipts**     | Confirms storage (plaintext metadata)      | Sends encrypted read receipts                |
-| **Typing indicators**     | Relays ephemeral signals                   | Sends/displays typing state                  |
-| **Push notifications**    | Sends push with encrypted payload          | Decrypts and displays                        |
-| **Recovery**              | Validates recovery token                   | Generates recovery key, encrypts key backup  |
+| Concern                   | Server                                          | Client                                                 |
+| ------------------------- | ----------------------------------------------- | ------------------------------------------------------ |
+| **Device registration**   | Stores device metadata and Matrix key directory | Initializes machine, uploads keys, manages local store |
+| **Session establishment** | Serves Matrix key query/claim responses         | Runs Olm session establishment via `OlmMachine`        |
+| **Group membership**      | Tracks members, enforces roles                  | Distributes group keys on membership change            |
+| **Delivery receipts**     | Confirms storage (plaintext metadata)           | Sends encrypted read receipts                          |
+| **Typing indicators**     | Relays ephemeral signals                        | Sends/displays typing state                            |
+| **Push notifications**    | Sends push with encrypted payload               | Decrypts and displays                                  |
+| **Recovery**              | Validates recovery token                        | Generates recovery key, encrypts key backup            |
 
 ## API Surface
 
@@ -101,7 +101,7 @@ All public content and account management. Stateless, JSON request/response.
 ```
 /api/v2/health              GET     Server health
 /api/v2/auth/*              POST    Login, register, logout, refresh
-/api/v2/devices/*           CRUD    Device registration, key upload
+/api/v2/devices/*           CRUD    Device registration, Matrix key directory
 /api/v2/users/*             CRUD    Profile, settings, identity
 /api/v2/threads/*           CRUD    Agora public discussions
 /api/v2/comments/*          CRUD    Thread comments
@@ -176,10 +176,10 @@ Recipient ← WebSocket ← Opaque blob → Decrypt(ciphertext) → Display
 ### Device Registration
 
 ```
-Client → Generate identity key + signed pre-key + one-time pre-keys
-       → POST /api/v2/devices (upload public keys)
-       → Server stores in device registry
-       → Other clients fetch pre-key bundles to establish sessions
+Client → POST /api/v2/devices (register device shell)
+       → Initialize Matrix machine for device ID
+       → Upload Matrix device keys / one-time keys
+       → Other clients query and claim Matrix keys
 ```
 
 ## Technology Stack
@@ -191,7 +191,7 @@ Client → Generate identity key + signed pre-key + one-time pre-keys
 | Search     | Meilisearch                                        |
 | Realtime   | WebSocket via axum                                 |
 | Client     | React 19, TypeScript, Vite                         |
-| E2EE       | TBD: libsignal-protocol / openmls / vodozemac      |
+| E2EE       | matrix-sdk-crypto-wasm / vodozemac                 |
 | Mobile     | Capacitor (iOS/Android)                            |
 | Deployment | NixOS, systemd, Traefik                            |
 | CI         | GitHub Actions, Nix flake checks                   |

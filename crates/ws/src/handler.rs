@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use axum::{
     extract::{
-        Query, State, WebSocketUpgrade,
+        State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
     response::{IntoResponse, Response},
 };
+use axum_extra::extract::CookieJar;
 use futures_util::{SinkExt, StreamExt};
-use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::info;
 use uuid::Uuid;
@@ -20,20 +20,33 @@ use eulesia_db::repo::conversations::ConversationRepo;
 use crate::messages::{ClientMessage, ServerMessage};
 use crate::registry::ConnectionRegistry;
 
-#[derive(Deserialize)]
-pub struct WsQuery {
-    token: String,
-}
-
 pub type WsState = (Arc<sea_orm::DatabaseConnection>, ConnectionRegistry);
 
 pub async fn ws_upgrade(
     State((db, registry)): State<WsState>,
-    Query(query): Query<WsQuery>,
+    jar: CookieJar,
     ws: WebSocketUpgrade,
 ) -> Response {
+    // Authenticate via session cookie only — query-param tokens are a
+    // security risk (logged in URLs, referer headers, browser history).
+    let token = jar
+        .get("session")
+        .or_else(|| jar.get("__Host-session"))
+        .map(|c| c.value().to_string());
+
+    let token = match token {
+        Some(t) => t,
+        None => {
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                "missing session token",
+            )
+                .into_response();
+        }
+    };
+
     // Validate session token before upgrading
-    let session_result = AuthService::validate_session(&db, &query.token).await;
+    let session_result = AuthService::validate_session(&db, &token).await;
 
     match session_result {
         Ok((session, _user)) => {
@@ -142,14 +155,19 @@ async fn broadcast_typing(
     }
 }
 
-/// Broadcast a new-message event to all other conversation members.
-/// Called by message handlers after persisting a message.
+/// Broadcast a new-message event to all conversation members, excluding the
+/// originating connection when it is known.
+///
+/// Sender fanout is required so the user's other devices stay in sync after a
+/// send, but excluding the origin avoids a needless echo to the same socket.
+#[allow(clippy::too_many_arguments)]
 pub async fn broadcast_new_message(
     db: &sea_orm::DatabaseConnection,
     registry: &ConnectionRegistry,
     conversation_id: Uuid,
     message_id: Uuid,
     sender_id: Uuid,
+    sender_connection_id: Option<Uuid>,
     ciphertext: &str,
     epoch: i64,
 ) {
@@ -170,7 +188,13 @@ pub async fn broadcast_new_message(
     };
 
     for member in &members {
-        if member.user_id != sender_id {
+        if member.user_id == sender_id {
+            if let Some(connection_id) = sender_connection_id {
+                registry.send_to_user_excluding_connection(&member.user_id, &connection_id, &msg);
+            } else {
+                registry.send_to_user(&member.user_id, &msg);
+            }
+        } else {
             registry.send_to_user(&member.user_id, &msg);
         }
     }

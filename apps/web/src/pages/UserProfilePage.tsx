@@ -12,12 +12,15 @@ import {
   Users,
   Send,
   Info,
+  Lock,
+  Loader2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Layout } from "../components/layout";
 import { SEOHead } from "../components/SEOHead";
 import { FollowButton, ReportButton } from "../components/common";
 import { useAuth } from "../hooks/useAuth";
+import { useDevice } from "../hooks/useDevice";
 import { useStartConversation } from "../hooks/useApi";
 import { formatDateLong } from "../lib/formatTime";
 import { api } from "../lib/api";
@@ -124,6 +127,11 @@ export function UserProfilePage() {
   const { t } = useTranslation(["profile", "agora", "common"]);
   const { userId } = useParams<{ userId: string }>();
   const { currentUser, isAuthenticated } = useAuth();
+  const {
+    isInitialized: deviceReady,
+    isInitializing: deviceInitializing,
+    error: deviceError,
+  } = useDevice();
   const navigate = useNavigate();
   const startConversationMutation = useStartConversation();
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -161,6 +169,15 @@ export function UserProfilePage() {
   });
 
   const isOwnProfile = currentUser?.id === userId;
+  const {
+    data: recipientDevices,
+    isLoading: recipientDevicesLoading,
+    isError: recipientDevicesError,
+  } = useQuery({
+    queryKey: ["userDevices", userId],
+    queryFn: () => api.getUserDevices(userId!),
+    enabled: Boolean(isAuthenticated && userId && !isOwnProfile),
+  });
   const isInstitution = user?.role === "institution";
   const hasTopic = isInstitution && user?.institutionTopic;
   const isUnclaimed =
@@ -168,6 +185,29 @@ export function UserProfilePage() {
     (user?.identityProvider === "system" ||
       user?.identityProvider === "eulesia-bot");
   const isMunicipality = user?.institutionType === "municipality";
+  const recipientHasDevice = !!recipientDevices && recipientDevices.length > 0;
+
+  const privateChatBlockReason = !isAuthenticated
+    ? null
+    : deviceInitializing
+      ? t("profile:userProfile.preparingPrivateChat")
+      : !deviceReady
+        ? deviceError || t("profile:userProfile.privateChatNeedsYourDevice")
+        : recipientDevicesLoading
+          ? t("profile:userProfile.checkingPrivateChat")
+          : recipientDevicesError
+            ? t("profile:userProfile.privateChatCheckFailed", {
+                defaultValue:
+                  "Could not verify whether the recipient has a registered device.",
+              })
+            : !recipientHasDevice
+              ? t("profile:userProfile.privateChatNeedsRecipientDevice", {
+                  name: user?.name ?? "",
+                })
+              : null;
+
+  const canStartPrivateChat =
+    isAuthenticated && !sendingMessage && !privateChatBlockReason;
 
   if (isLoading) {
     return (
@@ -328,15 +368,69 @@ export function UserProfilePage() {
             {isAuthenticated && (
               <button
                 onClick={handleSendMessage}
-                disabled={sendingMessage}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
+                disabled={!canStartPrivateChat}
+                title={
+                  privateChatBlockReason ||
+                  t("profile:userProfile.privateChatTooltipReady")
+                }
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Send className="w-4 h-4" />
+                {sendingMessage ||
+                deviceInitializing ||
+                recipientDevicesLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
                 {sendingMessage
                   ? t("profile:userProfile.opening")
-                  : t("profile:userProfile.sendMessage")}
+                  : deviceInitializing || recipientDevicesLoading
+                    ? t("profile:userProfile.preparingPrivateChat")
+                    : t("profile:userProfile.sendMessage")}
               </button>
             )}
+          </div>
+        )}
+        {!isOwnProfile && isAuthenticated && (
+          <div
+            className={`mt-3 rounded-xl border px-3 py-3 ${
+              privateChatBlockReason
+                ? "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20"
+                : "border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/20"
+            }`}
+          >
+            <div className="flex items-start gap-2">
+              {deviceInitializing || recipientDevicesLoading ? (
+                <Loader2 className="w-4 h-4 mt-0.5 text-blue-600 animate-spin flex-shrink-0" />
+              ) : (
+                <Lock
+                  className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
+                    privateChatBlockReason
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-emerald-600 dark:text-emerald-400"
+                  }`}
+                />
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  {privateChatBlockReason
+                    ? t("profile:userProfile.sendMessage")
+                    : t("profile:userProfile.privateChatReady")}
+                </p>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                  {privateChatBlockReason ||
+                    t("profile:userProfile.privateChatReadyDescription")}
+                </p>
+                {!deviceReady && (
+                  <Link
+                    to="/profile"
+                    className="mt-2 inline-flex text-sm font-medium text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300"
+                  >
+                    {t("profile:userProfile.openDeviceSettings")}
+                  </Link>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

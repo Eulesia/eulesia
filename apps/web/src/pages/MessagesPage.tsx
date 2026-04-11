@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { MessageSquare, Search } from "lucide-react";
+import { MessageSquare, Search, Users, Plus, Lock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Layout } from "../components/layout";
 import { SEOHead } from "../components/SEOHead";
@@ -26,14 +26,32 @@ function ConversationItem({ conversation }: { conversation: Conversation }) {
     otherUser?.name || conversation.name || t("groupConversation");
   const avatarUrl = otherUser?.avatarUrl;
 
+  const isGroup = conversation.conversationType === "group";
+  const privacyLabel = isGroup ? t("privateGroup") : t("privateChat");
+  const preview =
+    lastMessage?.content?.substring(0, 80) ??
+    (lastMessage ? t("encryptedMessagePreview") : t("noMessagesPreview"));
+  const path = isGroup
+    ? `/messages/group/${conversation.id}`
+    : `/messages/${conversation.id}`;
+
   return (
     <Link
-      to={`/messages/${conversation.id}`}
-      className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-b border-gray-100 dark:border-gray-800"
+      to={path}
+      title={`${privacyLabel} • ${t("e2eeLabel")}`}
+      className="flex items-center gap-3 px-4 py-3 transition-colors border-b border-emerald-100 dark:border-emerald-950/40 bg-gradient-to-r from-emerald-50/80 via-white to-teal-50/60 dark:from-emerald-950/20 dark:via-gray-900 dark:to-teal-950/10 hover:from-emerald-100/80 hover:to-teal-100/70 dark:hover:from-emerald-950/30 dark:hover:to-teal-950/20"
     >
       {/* Avatar */}
-      <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-        {avatarUrl ? (
+      <div
+        className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br ${
+          isGroup
+            ? "from-emerald-600 to-teal-700"
+            : "from-emerald-500 to-cyan-600"
+        }`}
+      >
+        {isGroup ? (
+          <Users className="w-6 h-6 text-white" />
+        ) : avatarUrl ? (
           <img
             src={avatarUrl}
             alt=""
@@ -49,23 +67,33 @@ function ConversationItem({ conversation }: { conversation: Conversation }) {
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
-          <span
-            className={`text-sm truncate ${unreadCount > 0 ? "font-bold text-gray-900 dark:text-gray-100" : "font-medium text-gray-900 dark:text-gray-100"}`}
-          >
-            {displayName}
-          </span>
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className={`text-sm truncate ${unreadCount > 0 ? "font-bold text-gray-900 dark:text-gray-100" : "font-medium text-gray-900 dark:text-gray-100"}`}
+            >
+              {displayName}
+            </span>
+            <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/40 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+              <Lock className="w-3 h-3" />
+              {privacyLabel}
+            </span>
+          </div>
           <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 ml-2">
             {formatMessageDate(lastMessage?.createdAt || updatedAt)}
           </span>
         </div>
         <div className="flex items-center justify-between mt-0.5">
-          <p
-            className={`text-sm truncate ${unreadCount > 0 ? "text-gray-900 dark:text-gray-100 font-medium" : "text-gray-500 dark:text-gray-400"}`}
-          >
-            {lastMessage?.content
-              ? lastMessage.content.substring(0, 80)
-              : t("noMessagesPreview")}
-          </p>
+          <div className="min-w-0">
+            <span className="inline-flex sm:hidden items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/40 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+              <Lock className="w-3 h-3" />
+              {privacyLabel}
+            </span>
+            <p
+              className={`text-sm truncate ${unreadCount > 0 ? "text-gray-900 dark:text-gray-100 font-medium" : "text-gray-500 dark:text-gray-400"} ${isGroup ? "mt-1" : ""}`}
+            >
+              {preview}
+            </p>
+          </div>
           {unreadCount > 0 && (
             <span className="ml-2 bg-blue-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
               {unreadCount > 9 ? "9+" : unreadCount}
@@ -89,9 +117,18 @@ export function MessagesPage() {
         className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 py-4"
         data-guide="messages-header"
       >
-        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-          {t("title")}
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+            {t("title")}
+          </h1>
+          <Link
+            to="/messages/new-group"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            {t("newGroup", { defaultValue: "New Group" })}
+          </Link>
+        </div>
       </div>
 
       {/* Conversations list */}

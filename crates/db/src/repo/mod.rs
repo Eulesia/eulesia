@@ -3,6 +3,7 @@ pub mod blocks;
 pub mod bookmarks;
 pub mod comments;
 pub mod conversations;
+pub mod device_pairing_tokens;
 pub mod devices;
 pub mod epochs;
 pub mod follows;

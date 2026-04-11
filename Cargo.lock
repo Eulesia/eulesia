@@ -1350,6 +1350,7 @@ name = "eulesia-ws"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "axum-extra",
  "dashmap",
  "eulesia-auth",
  "eulesia-common",

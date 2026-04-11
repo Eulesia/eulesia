@@ -2,8 +2,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter, prelude::Decimal,
+    ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr, EntityTrait, prelude::Decimal,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -59,9 +58,10 @@ pub async fn sync_reference_data(
     Ok(ReferenceDataSyncReport { municipalities })
 }
 
-/// Ensure the "Eulesia Summary" system user exists. This is the author of all
-/// AI-generated summary threads. It is NOT affiliated with any institution —
-/// summaries post to local scope with a municipality_id instead.
+/// Ensure the "Eulesia Summary" system user exists.
+///
+/// This account authors AI-generated summary threads. It is not affiliated
+/// with any institution; summaries post to local scope by municipality.
 pub async fn ensure_summary_user(db: &DatabaseConnection) -> Result<(), DbErr> {
     let existing = users::Entity::find_by_id(EULESIA_SUMMARY_USER_ID)
         .one(db)

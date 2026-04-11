@@ -125,24 +125,8 @@ pub fn router(state: AppState) -> Router {
         .merge(waitlist::routes())
         // Alias: /reports/my-sanctions -> same handler as /moderation/my-sanctions
         .route("/reports/my-sanctions", get(moderation::my_sanctions))
-        // DM route aliases — frontend calls /dm/* but v2 uses /conversations/*.
-        .route(
-            "/dm",
-            get(messaging::conversations::list).post(messaging::conversations::create_dm_v1),
-        )
-        .route("/dm/{id}", get(messaging::conversations::get_dm_v1))
-        .route(
-            "/dm/{id}/messages",
-            post(messaging::conversations::send_dm_message_v1)
-                .get(messaging::conversations::list_dm_messages_v1),
-        )
-        .route("/dm/{id}/read", post(messaging::messages::mark_read))
-        .route(
-            "/dm/{id}/messages/{messageId}",
-            axum::routing::patch(messaging::messages::edit_message)
-                .delete(messaging::messages::delete_message),
-        )
         .route("/dm/unread-count", get(dm_unread_count))
+        .route("/conversations/unread-count", get(dm_unread_count))
         // Report aliases — frontend calls /reports but v2 uses /moderation
         .route("/reports", post(moderation::reports::create_report))
         .route("/reports/appeal", post(moderation::appeals::create_appeal))

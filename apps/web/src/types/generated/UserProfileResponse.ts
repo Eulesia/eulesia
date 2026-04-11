@@ -2,4 +2,4 @@
 import type { MunicipalityResponse } from "./MunicipalityResponse";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type UserProfileResponse = { id: string, username: string, name: string, avatarUrl: string | null, bio: string | null, role: string, institutionType: string | null, institutionName: string | null, identityVerified: boolean, municipalityId: string | null, municipality: MunicipalityResponse | null, createdAt: string, threads: Array<JsonValue>, };
+export type UserProfileResponse = { id: string, username: string, name: string, avatarUrl: string | null, bio: string | null, role: string, institutionType: string | null, institutionName: string | null, identityVerified: boolean, identityProvider: string | null, municipalityId: string | null, municipality: MunicipalityResponse | null, createdAt: string, threads: Array<JsonValue>, botSummaries: Array<JsonValue>, };

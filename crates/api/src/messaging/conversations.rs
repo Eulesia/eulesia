@@ -1,5 +1,5 @@
 use axum::Json;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use sea_orm::ActiveModelTrait;
 use sea_orm::ActiveValue::Set;
 use sea_orm::TransactionTrait;
@@ -13,6 +13,7 @@ use eulesia_db::entities::{
     conversation_epochs, conversations, direct_conversations, membership_events, memberships,
 };
 use eulesia_db::repo::conversations::ConversationRepo;
+use eulesia_db::repo::devices::DeviceRepo;
 use eulesia_db::repo::epochs::EpochRepo;
 use eulesia_db::repo::memberships::MembershipRepo;
 use eulesia_db::repo::users::UserRepo;
@@ -22,44 +23,37 @@ use super::types::{
     EpochResponse, LastMessageSummary, MemberSummary, UpdateConversationRequest,
 };
 
-/// v1-compatible request: frontend sends `{ "userId": "..." }`.
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct CreateDmV1Request {
-    user_id: Uuid,
-}
-
-/// v1-compatible DM creation: accepts `{ "userId": "..." }` and
-/// translates to the v2 `CreateConversationRequest` shape.
-pub async fn create_dm_v1(
-    auth: AuthUser,
-    State(state): State<AppState>,
-    Json(req): Json<CreateDmV1Request>,
-) -> Result<Json<ConversationResponse>, ApiError> {
-    let v2_req = CreateConversationRequest {
-        conversation_type: ConversationType::Direct,
-        encryption: Some("none".into()),
-        name: None,
-        description: None,
-        members: vec![req.user_id],
-    };
-    create_direct(auth.user_id.0, &state, &v2_req).await
-}
-
 #[allow(clippy::needless_pass_by_value)]
 fn db_err(e: sea_orm::DbErr) -> ApiError {
     ApiError::Database(e.to_string())
 }
 
-fn members_from_models(models: &[memberships::Model]) -> Vec<MemberSummary> {
+fn members_from_models(
+    models: &[memberships::Model],
+    user_map: &std::collections::HashMap<uuid::Uuid, eulesia_db::entities::users::Model>,
+) -> Vec<MemberSummary> {
     models
         .iter()
-        .map(|m| MemberSummary {
-            user_id: m.user_id,
-            role: m.role.parse::<GroupRole>().unwrap_or(GroupRole::Member),
-            joined_epoch: m.joined_epoch,
+        .map(|m| {
+            let user = user_map.get(&m.user_id);
+            MemberSummary {
+                user_id: m.user_id,
+                name: user.map_or_else(|| "Unknown".into(), |u| u.name.clone()),
+                avatar_url: user.and_then(|u| u.avatar_url.clone()),
+                role: m.role.parse::<GroupRole>().unwrap_or(GroupRole::Member),
+                joined_epoch: m.joined_epoch,
+            }
         })
         .collect()
+}
+
+async fn build_user_map(
+    db: &sea_orm::DatabaseConnection,
+    members: &[memberships::Model],
+) -> Result<std::collections::HashMap<uuid::Uuid, eulesia_db::entities::users::Model>, ApiError> {
+    let user_ids: Vec<uuid::Uuid> = members.iter().map(|m| m.user_id).collect();
+    let users = UserRepo::find_by_ids(db, &user_ids).await.map_err(db_err)?;
+    Ok(users.into_iter().map(|u| (u.id, u)).collect())
 }
 
 fn conversation_response(
@@ -143,10 +137,10 @@ async fn create_direct(
             let other_active = members.iter().any(|m| m.user_id == other);
 
             if caller_active && other_active {
-                return Ok(Json(conversation_response(
-                    &existing,
-                    members_from_models(&members),
-                )));
+                return Ok(Json(conversation_response(&existing, {
+                    let um = build_user_map(&state.db, &members).await?;
+                    members_from_models(&members, &um)
+                })));
             }
 
             // Reactivate: re-add missing members and bump epoch.
@@ -206,12 +200,50 @@ async fn create_direct(
             let refreshed_members = ConversationRepo::active_members(&state.db, existing.id)
                 .await
                 .map_err(db_err)?;
-            return Ok(Json(conversation_response(
-                &refreshed_conv,
-                members_from_models(&refreshed_members),
-            )));
+            return Ok(Json(conversation_response(&refreshed_conv, {
+                let um = build_user_map(&state.db, &refreshed_members).await?;
+                members_from_models(&refreshed_members, &um)
+            })));
         }
     }
+
+    let caller_has_device = DeviceRepo::has_enrolled_device(&*state.db, caller)
+        .await
+        .map_err(db_err)?;
+    let other_has_device = DeviceRepo::has_enrolled_device(&*state.db, other)
+        .await
+        .map_err(db_err)?;
+    let both_have_devices = caller_has_device && other_has_device;
+
+    // Choose sensible default and enforce policy:
+    // - If both users are enrolled, prefer enforced e2ee.
+    // - If either user is not enrolled, allow legacy plaintext fallback.
+    let encryption = match req.encryption.as_deref() {
+        Some("e2ee") if !both_have_devices => {
+            return Err(ApiError::BadRequest(
+                "encryption \"e2ee\" requires both users to have active devices".into(),
+            ));
+        }
+        Some("none") if both_have_devices => {
+            return Err(ApiError::BadRequest(
+                "encryption \"none\" is not allowed when both users have active devices".into(),
+            ));
+        }
+        Some("e2ee") => "e2ee",
+        Some("none") => "none",
+        None => {
+            if both_have_devices {
+                "e2ee"
+            } else {
+                "none"
+            }
+        }
+        Some(other) => {
+            return Err(ApiError::BadRequest(format!(
+                "unsupported encryption mode: {other}"
+            )));
+        }
+    };
 
     let conv_id = new_id();
     let now = chrono::Utc::now().fixed_offset();
@@ -226,13 +258,6 @@ async fn create_direct(
         .begin()
         .await
         .map_err(|e| ApiError::Database(e.to_string()))?;
-
-    let encryption = req.encryption.as_deref().unwrap_or("e2ee");
-    if encryption != "e2ee" && encryption != "none" {
-        return Err(ApiError::BadRequest(
-            "encryption must be 'e2ee' or 'none'".into(),
-        ));
-    }
 
     // Create conversation.
     let conv = conversations::ActiveModel {
@@ -328,10 +353,10 @@ async fn create_direct(
                     let members = ConversationRepo::active_members(&state.db, existing.id)
                         .await
                         .map_err(db_err)?;
-                    return Ok(Json(conversation_response(
-                        &existing,
-                        members_from_models(&members),
-                    )));
+                    return Ok(Json(conversation_response(&existing, {
+                        let um = build_user_map(&state.db, &members).await?;
+                        members_from_models(&members, &um)
+                    })));
                 }
             }
             return Err(ApiError::Database(msg));
@@ -342,10 +367,10 @@ async fn create_direct(
         .await
         .map_err(db_err)?;
 
-    Ok(Json(conversation_response(
-        &conv,
-        members_from_models(&members),
-    )))
+    Ok(Json(conversation_response(&conv, {
+        let um = build_user_map(&state.db, &members).await?;
+        members_from_models(&members, &um)
+    })))
 }
 
 #[allow(clippy::too_many_lines)]
@@ -363,10 +388,11 @@ async fn create_group(
         .await
         .map_err(|e| ApiError::Database(e.to_string()))?;
 
-    let encryption = req.encryption.as_deref().unwrap_or("e2ee");
-    if encryption != "e2ee" && encryption != "none" {
+    // Private conversations are always end-to-end encrypted.
+    let encryption = "e2ee";
+    if req.encryption.as_deref().is_some_and(|e| e != "e2ee") {
         return Err(ApiError::BadRequest(
-            "encryption must be 'e2ee' or 'none'".into(),
+            "private conversations must use e2ee encryption".into(),
         ));
     }
 
@@ -444,12 +470,30 @@ async fn create_group(
         .filter(|&id| id != caller)
         .collect();
 
+    // +1 for the creator who is already a member.
+    if unique_members.len() + 1 > super::types::MAX_GROUP_MEMBERS {
+        return Err(ApiError::BadRequest(format!(
+            "groups cannot have more than {} members",
+            super::types::MAX_GROUP_MEMBERS
+        )));
+    }
+
     for member_id in unique_members {
         // Verify user exists.
         UserRepo::find_by_id(&state.db, member_id)
             .await
             .map_err(db_err)?
             .ok_or_else(|| ApiError::NotFound(format!("user {member_id} not found")))?;
+
+        // E2EE groups require all members to have a registered device.
+        if !DeviceRepo::has_enrolled_device(&*state.db, member_id)
+            .await
+            .map_err(db_err)?
+        {
+            return Err(ApiError::BadRequest(format!(
+                "user {member_id} has no registered device"
+            )));
+        }
 
         MembershipRepo::create(
             &txn,
@@ -493,10 +537,10 @@ async fn create_group(
         .await
         .map_err(db_err)?;
 
-    Ok(Json(conversation_response(
-        &conv,
-        members_from_models(&members),
-    )))
+    Ok(Json(conversation_response(&conv, {
+        let um = build_user_map(&state.db, &members).await?;
+        members_from_models(&members, &um)
+    })))
 }
 
 // ---------------------------------------------------------------------------
@@ -534,6 +578,7 @@ pub async fn list(
                  conversation_id, id, sender_id, ciphertext, server_ts
           FROM messages
           WHERE conversation_id IN ({in_clause})
+            AND message_type <> 'to_device'
           ORDER BY conversation_id, server_ts DESC"
     );
     let mut values: Vec<sea_orm::Value> = conv_ids.iter().map(|id| (*id).into()).collect();
@@ -580,6 +625,7 @@ pub async fn list(
           FROM memberships mb
           JOIN messages m
             ON m.conversation_id = mb.conversation_id
+           AND m.message_type <> 'to_device'
            AND m.sender_id <> mb.user_id
            AND (mb.last_read_at IS NULL OR m.server_ts > mb.last_read_at)
           WHERE mb.user_id = ${} AND mb.left_at IS NULL
@@ -709,10 +755,10 @@ pub async fn get(
         .await
         .map_err(db_err)?;
 
-    Ok(Json(conversation_response(
-        &conv,
-        members_from_models(&members),
-    )))
+    Ok(Json(conversation_response(&conv, {
+        let um = build_user_map(&state.db, &members).await?;
+        members_from_models(&members, &um)
+    })))
 }
 
 // ---------------------------------------------------------------------------
@@ -776,10 +822,10 @@ pub async fn update(
         .await
         .map_err(db_err)?;
 
-    Ok(Json(conversation_response(
-        &updated,
-        members_from_models(&members),
-    )))
+    Ok(Json(conversation_response(&updated, {
+        let um = build_user_map(&state.db, &members).await?;
+        members_from_models(&members, &um)
+    })))
 }
 
 // ---------------------------------------------------------------------------
@@ -863,383 +909,5 @@ pub async fn list_epochs(
     Ok(Json(items))
 }
 
-// ---------------------------------------------------------------------------
-// v1-compat: GET /dm/{id} — returns { id, otherUser, messages[] }
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct V1UserSummary {
-    id: Uuid,
-    name: String,
-    avatar_url: Option<String>,
-    role: String,
-}
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct V1DirectMessage {
-    id: Uuid,
-    conversation_id: Uuid,
-    content: Option<String>,
-    author: Option<V1UserSummary>,
-    created_at: String,
-}
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct V1ConversationWithMessages {
-    id: Uuid,
-    encryption: String,
-    other_user: Option<V1UserSummary>,
-    messages: Vec<V1DirectMessage>,
-}
-
-/// v1-compat: returns the shape the frontend `ConversationWithMessages` expects.
-pub async fn get_dm_v1(
-    auth: AuthUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<V1ConversationWithMessages>, ApiError> {
-    let caller = auth.user_id.0;
-
-    let conv = ConversationRepo::find_by_id(&state.db, id)
-        .await
-        .map_err(db_err)?
-        .ok_or_else(|| ApiError::NotFound("conversation not found".into()))?;
-
-    // Verify caller is active member.
-    MembershipRepo::find_active(&*state.db, id, caller)
-        .await
-        .map_err(db_err)?
-        .ok_or(ApiError::Forbidden)?;
-
-    // Resolve the "other user" — the member who isn't the caller.
-    let members = ConversationRepo::active_members(&state.db, id)
-        .await
-        .map_err(db_err)?;
-    let other_id = members
-        .iter()
-        .find(|m| m.user_id != caller)
-        .map(|m| m.user_id);
-
-    let other_user = if let Some(uid) = other_id {
-        UserRepo::find_by_id(&state.db, uid)
-            .await
-            .map_err(db_err)?
-            .map(|u| V1UserSummary {
-                id: u.id,
-                name: u.name,
-                avatar_url: u.avatar_url,
-                role: u.role,
-            })
-    } else {
-        None
-    };
-
-    // Fetch recent messages (plaintext path).
-    let msgs = ConversationRepo::messages_page(&state.db, id, None, 50)
-        .await
-        .map_err(db_err)?;
-
-    // Resolve all message authors in one batch.
-    let author_ids: Vec<Uuid> = msgs
-        .iter()
-        .map(|m| m.sender_id)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    let users = UserRepo::find_by_ids(&state.db, &author_ids)
-        .await
-        .map_err(db_err)?;
-    let user_map: std::collections::HashMap<Uuid, V1UserSummary> = users
-        .into_iter()
-        .map(|u| {
-            (
-                u.id,
-                V1UserSummary {
-                    id: u.id,
-                    name: u.name,
-                    avatar_url: u.avatar_url,
-                    role: u.role,
-                },
-            )
-        })
-        .collect();
-
-    let messages = msgs
-        .into_iter()
-        .map(|m| {
-            let content = m
-                .ciphertext
-                .as_ref()
-                .and_then(|ct| String::from_utf8(ct.clone()).ok());
-            V1DirectMessage {
-                id: m.id,
-                conversation_id: m.conversation_id,
-                content,
-                author: user_map.get(&m.sender_id).cloned(),
-                created_at: m.server_ts.to_rfc3339(),
-            }
-        })
-        .collect();
-
-    Ok(Json(V1ConversationWithMessages {
-        id: conv.id,
-        encryption: conv.encryption,
-        other_user,
-        messages,
-    }))
-}
-
-// ---------------------------------------------------------------------------
-// v1-compat: GET /dm/{id}/messages — returns DirectMessage[] shape
-// ---------------------------------------------------------------------------
-
-pub async fn list_dm_messages_v1(
-    auth: AuthUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    Query(params): Query<super::types::MessageCursorParams>,
-) -> Result<Json<Vec<V1DirectMessage>>, ApiError> {
-    let caller = auth.user_id.0;
-
-    // Verify caller is active member.
-    MembershipRepo::find_active(&*state.db, id, caller)
-        .await
-        .map_err(db_err)?
-        .ok_or(ApiError::Forbidden)?;
-
-    let limit = params.limit.unwrap_or(50).min(100);
-    let msgs = ConversationRepo::messages_page(&state.db, id, params.before, limit)
-        .await
-        .map_err(db_err)?;
-
-    // Resolve authors in one batch.
-    let author_ids: Vec<Uuid> = msgs
-        .iter()
-        .map(|m| m.sender_id)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    let users = UserRepo::find_by_ids(&state.db, &author_ids)
-        .await
-        .map_err(db_err)?;
-    let user_map: std::collections::HashMap<Uuid, V1UserSummary> = users
-        .into_iter()
-        .map(|u| {
-            (
-                u.id,
-                V1UserSummary {
-                    id: u.id,
-                    name: u.name,
-                    avatar_url: u.avatar_url,
-                    role: u.role,
-                },
-            )
-        })
-        .collect();
-
-    let messages = msgs
-        .into_iter()
-        .map(|m| {
-            let content = m
-                .ciphertext
-                .as_ref()
-                .and_then(|ct| String::from_utf8(ct.clone()).ok());
-            V1DirectMessage {
-                id: m.id,
-                conversation_id: m.conversation_id,
-                content,
-                author: user_map.get(&m.sender_id).cloned(),
-                created_at: m.server_ts.to_rfc3339(),
-            }
-        })
-        .collect();
-
-    Ok(Json(messages))
-}
-
-// ---------------------------------------------------------------------------
-// v1-compat: POST /dm/{id}/messages — send and return DirectMessage shape
-// ---------------------------------------------------------------------------
-
-pub async fn send_dm_message_v1(
-    auth: AuthUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    Json(req): Json<super::types::SendMessageRequest>,
-) -> Result<Json<V1DirectMessage>, ApiError> {
-    let caller = auth.user_id.0;
-
-    // Verify caller is active member.
-    let conv = ConversationRepo::find_by_id(&state.db, id)
-        .await
-        .map_err(db_err)?
-        .ok_or_else(|| ApiError::NotFound("conversation not found".into()))?;
-
-    MembershipRepo::find_active(&*state.db, id, caller)
-        .await
-        .map_err(db_err)?
-        .ok_or(ApiError::Forbidden)?;
-
-    // For plaintext DMs, store the content directly.
-    let content_text = req.content.clone();
-    let ciphertext = content_text.as_ref().map(|c| c.as_bytes().to_vec());
-
-    let msg_id = eulesia_common::types::new_id();
-    let now = chrono::Utc::now().fixed_offset();
-
-    let msg = eulesia_db::repo::messages::MessageRepo::create(
-        &*state.db,
-        eulesia_db::entities::messages::ActiveModel {
-            id: sea_orm::ActiveValue::Set(msg_id),
-            conversation_id: sea_orm::ActiveValue::Set(id),
-            sender_id: sea_orm::ActiveValue::Set(caller),
-            sender_device_id: sea_orm::ActiveValue::Set(None),
-            epoch: sea_orm::ActiveValue::Set(conv.current_epoch),
-            ciphertext: sea_orm::ActiveValue::Set(ciphertext),
-            message_type: sea_orm::ActiveValue::Set(req.message_type.as_str().to_string()),
-            server_ts: sea_orm::ActiveValue::Set(now),
-        },
-    )
-    .await
-    .map_err(db_err)?;
-
-    // Broadcast to other members via WebSocket with stored content as base64
-    let broadcast_ct = msg
-        .ciphertext
-        .as_ref()
-        .map(|ct| {
-            use base64::Engine;
-            base64::engine::general_purpose::STANDARD.encode(ct)
-        })
-        .unwrap_or_default();
-    eulesia_ws::handler::broadcast_new_message(
-        &state.db,
-        &state.ws_registry,
-        id,
-        msg.id,
-        caller,
-        &broadcast_ct,
-        conv.current_epoch,
-    )
-    .await;
-
-    // Resolve author for response.
-    let user = UserRepo::find_by_id(&state.db, caller)
-        .await
-        .map_err(db_err)?;
-
-    let author = user.map(|u| V1UserSummary {
-        id: u.id,
-        name: u.name,
-        avatar_url: u.avatar_url,
-        role: u.role,
-    });
-
-    Ok(Json(V1DirectMessage {
-        id: msg.id,
-        conversation_id: msg.conversation_id,
-        content: content_text,
-        author,
-        created_at: msg.server_ts.to_rfc3339(),
-    }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Contract test: V1DirectMessage has the shape the frontend expects.
-    #[test]
-    fn v1_direct_message_shape() {
-        let msg = V1DirectMessage {
-            id: Uuid::nil(),
-            conversation_id: Uuid::nil(),
-            content: Some("Hello!".into()),
-            author: Some(V1UserSummary {
-                id: Uuid::nil(),
-                name: "Alice".into(),
-                avatar_url: Some("https://example.com/a.png".into()),
-                role: "citizen".into(),
-            }),
-            created_at: "2026-01-01T00:00:00+00:00".into(),
-        };
-
-        let json = serde_json::to_value(&msg).unwrap();
-        let obj = json.as_object().unwrap();
-
-        let keys = ["id", "conversationId", "content", "author", "createdAt"];
-        for key in &keys {
-            assert!(obj.contains_key(*key), "missing DirectMessage field: {key}");
-        }
-
-        // Must NOT have v2 fields
-        assert!(!obj.contains_key("senderId"));
-        assert!(!obj.contains_key("serverTs"));
-        assert!(!obj.contains_key("ciphertext"));
-        assert!(!obj.contains_key("messageType"));
-        assert!(!obj.contains_key("epoch"));
-
-        // Author shape
-        let author = obj["author"].as_object().unwrap();
-        for key in &["id", "name", "avatarUrl", "role"] {
-            assert!(author.contains_key(*key), "missing author.{key}");
-        }
-    }
-
-    /// Contract test: V1ConversationWithMessages has expected shape.
-    #[test]
-    fn v1_conversation_with_messages_shape() {
-        let conv = V1ConversationWithMessages {
-            id: Uuid::nil(),
-            encryption: "none".into(),
-            other_user: Some(V1UserSummary {
-                id: Uuid::nil(),
-                name: "Bob".into(),
-                avatar_url: None,
-                role: "citizen".into(),
-            }),
-            messages: vec![V1DirectMessage {
-                id: Uuid::nil(),
-                conversation_id: Uuid::nil(),
-                content: Some("Hi".into()),
-                author: None,
-                created_at: "2026-01-01T00:00:00+00:00".into(),
-            }],
-        };
-
-        let json = serde_json::to_value(&conv).unwrap();
-        let obj = json.as_object().unwrap();
-
-        let keys = ["id", "encryption", "otherUser", "messages"];
-        for key in &keys {
-            assert!(obj.contains_key(*key), "missing field: {key}");
-        }
-
-        assert!(obj["messages"].as_array().unwrap().len() == 1);
-    }
-
-    /// Regression #19: CreateDmV1Request accepts {userId} (not {conversationType, members}).
-    #[test]
-    fn create_dm_v1_request_accepts_user_id() {
-        let json = r#"{"userId":"550e8400-e29b-41d4-a716-446655440000"}"#;
-        let req: CreateDmV1Request = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            req.user_id,
-            "550e8400-e29b-41d4-a716-446655440000"
-                .parse::<Uuid>()
-                .unwrap()
-        );
-    }
-
-    /// Regression #19: {conversationType, members} should NOT be required for /dm.
-    #[test]
-    fn create_dm_v1_request_rejects_v2_shape() {
-        let json =
-            r#"{"conversationType":"direct","members":["550e8400-e29b-41d4-a716-446655440000"]}"#;
-        let result = serde_json::from_str::<CreateDmV1Request>(json);
-        assert!(result.is_err(), "v2 shape must not parse as v1 request");
-    }
-}
+// v1 DM endpoints (create_dm_v1, get_dm_v1, list_dm_messages_v1, send_dm_message_v1)
+// were removed. All messaging now goes through the v2 /conversations/* endpoints.

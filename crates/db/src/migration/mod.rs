@@ -21,7 +21,17 @@ mod m20260407_000018_jobs_geo_foundation;
 mod m20260407_000019_places_source_identity_index;
 mod m20260408_000020_clean_municipality_duplicates;
 mod m20260408_000021_thread_scope_personal;
+// NOTE: m20260408_000022_nuke_messages is intentionally NOT registered in
+// Migrator. It is an opt-in, out-of-band emergency migration that truncates
+// messaging tables (gated behind EULESIA_ALLOW_NUKE_MESSAGES). It lives here
+// for discoverability but must never run as part of the normal migration
+// sequence.
+mod m20260408_000023_add_skd_message_type;
 mod m20260409_000022_municipality_designation;
+mod m20260424_000024_device_pairing_tokens;
+mod m20260424_000025_matrix_crypto_keys;
+mod m20260424_000026_replace_skd_with_to_device_message_type;
+mod m20260424_000027_drop_legacy_device_prekeys;
 
 pub struct Migrator;
 
@@ -51,6 +61,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20260408_000020_clean_municipality_duplicates::Migration),
             Box::new(m20260408_000021_thread_scope_personal::Migration),
             Box::new(m20260409_000022_municipality_designation::Migration),
+            Box::new(m20260408_000023_add_skd_message_type::Migration),
+            Box::new(m20260424_000024_device_pairing_tokens::Migration),
+            Box::new(m20260424_000025_matrix_crypto_keys::Migration),
+            Box::new(m20260424_000026_replace_skd_with_to_device_message_type::Migration),
+            Box::new(m20260424_000027_drop_legacy_device_prekeys::Migration),
         ]
     }
 }

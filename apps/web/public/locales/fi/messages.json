@@ -14,5 +14,10 @@
   "sendMessage": "Lähetä viesti",
   "editMessage": "Muokkaa viestiä",
   "deleteMessage": "Poista viesti",
-  "typing": "kirjoittaa..."
+  "typing": "kirjoittaa...",
+  "groupConversation": "Ryhmäkeskustelu",
+  "privateChat": "Yksityinen keskustelu",
+  "privateGroup": "Yksityinen ryhmä",
+  "encryptedMessagePreview": "Salattu viesti",
+  "e2eeLabel": "Päästä päähän salattu"
 }

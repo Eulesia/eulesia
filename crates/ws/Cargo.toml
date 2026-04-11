@@ -11,6 +11,7 @@ eulesia-auth = { path = "../auth" }
 eulesia-common = { path = "../common" }
 eulesia-db = { path = "../db" }
 axum = { workspace = true, features = ["ws"] }
+axum-extra = { workspace = true }
 dashmap = { workspace = true }
 sea-orm = { workspace = true }
 serde = { workspace = true }

@@ -3,4 +3,4 @@
 /**
  * How a thread was created.
  */
-export type ThreadSource = "user" | "minutes_import" | "rss_import";
+export type ThreadSource = "user" | "minutes_import" | "rss_import" | "summary";

@@ -618,4 +618,8 @@ pub fn routes() -> Router<AppState> {
         .route("/users/me/onboarding-complete", post(onboarding_complete))
         .route("/users/me/data", get(export_my_data))
         .route("/users/settings", get(get_settings).patch(update_settings))
+        .route(
+            "/users/{id}/devices",
+            get(crate::devices::list_user_devices),
+        )
 }

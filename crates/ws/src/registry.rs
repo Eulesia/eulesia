@@ -22,6 +22,7 @@ struct Connection {
 
 #[derive(Clone, Default)]
 pub struct ConnectionRegistry {
+    /// connection_id -> Connection
     connections: Arc<DashMap<Uuid, Connection>>,
     /// Reverse index: user_id → set of connection_ids.
     user_connections: Arc<DashMap<Uuid, Vec<Uuid>>>,
@@ -101,6 +102,27 @@ impl ConnectionRegistry {
     pub fn send_to_user(&self, user_id: &Uuid, msg: &ServerMessage) {
         if let Some(conn_ids) = self.user_connections.get(user_id) {
             for cid in conn_ids.iter() {
+                if let Some(conn) = self.connections.get(cid) {
+                    let _ = conn.sender.try_send(msg.clone());
+                }
+            }
+        }
+    }
+
+    /// Send a message to all connected devices of a user except one
+    /// originating connection.
+    pub fn send_to_user_excluding_connection(
+        &self,
+        user_id: &Uuid,
+        excluded_connection_id: &Uuid,
+        msg: &ServerMessage,
+    ) {
+        if let Some(conn_ids) = self.user_connections.get(user_id) {
+            for cid in conn_ids.iter() {
+                if *cid == *excluded_connection_id {
+                    continue;
+                }
+
                 if let Some(conn) = self.connections.get(cid) {
                     let _ = conn.sender.try_send(msg.clone());
                 }
@@ -213,6 +235,29 @@ mod tests {
 
         assert!(rx1.try_recv().is_ok());
         assert!(rx2.try_recv().is_err()); // user2 should NOT receive
+    }
+
+    #[test]
+    fn send_to_user_excluding_connection_skips_only_origin() {
+        let reg = make_registry();
+        let user_id = Uuid::now_v7();
+
+        let origin = Uuid::now_v7();
+        let other = Uuid::now_v7();
+        let (origin_tx, mut origin_rx) = mpsc::channel(16);
+        let (other_tx, mut other_rx) = mpsc::channel(16);
+
+        reg.register(origin, origin_tx, Uuid::now_v7(), user_id);
+        reg.register(other, other_tx, Uuid::now_v7(), user_id);
+
+        let msg = ServerMessage::Presence {
+            user_id,
+            online: true,
+        };
+        reg.send_to_user_excluding_connection(&user_id, &origin, &msg);
+
+        assert!(origin_rx.try_recv().is_err());
+        assert!(other_rx.try_recv().is_ok());
     }
 
     #[test]

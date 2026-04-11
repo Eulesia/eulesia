@@ -9,7 +9,8 @@ pub enum ServerMessage {
         conversation_id: Uuid,
         message_id: Uuid,
         sender_id: Uuid,
-        /// Base64-encoded ciphertext (opaque to server).
+        /// Base64-encoded ciphertext when it is identical for all recipients.
+        /// Per-device messages use an empty string; clients must refetch.
         ciphertext: String,
         epoch: i64,
     },

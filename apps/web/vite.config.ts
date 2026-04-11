@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-const pwaMode = process.env.EULESIA_PWA_MODE ?? "enabled";
+const pwaMode = process.env.EULESIA_PWA_MODE ?? "disabled";
 
 if (!["enabled", "self-destroying", "disabled"].includes(pwaMode)) {
   throw new Error(`Unsupported EULESIA_PWA_MODE: ${pwaMode}`);

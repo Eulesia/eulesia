@@ -14,5 +14,10 @@
   "sendMessage": "Send message",
   "editMessage": "Edit message",
   "deleteMessage": "Delete message",
-  "typing": "is typing..."
+  "typing": "is typing...",
+  "groupConversation": "Group conversation",
+  "privateChat": "Private chat",
+  "privateGroup": "Private group",
+  "encryptedMessagePreview": "Encrypted message",
+  "e2eeLabel": "End-to-end encrypted"
 }

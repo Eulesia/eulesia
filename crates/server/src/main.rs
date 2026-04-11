@@ -14,6 +14,19 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
+fn should_spa_fallback(path: &str) -> bool {
+    if path.starts_with("/api/")
+        || path.starts_with("/assets/")
+        || path.starts_with("/ws/")
+        || path.starts_with("/uploads/")
+    {
+        return false;
+    }
+
+    let last_segment = path.rsplit('/').next().unwrap_or(path);
+    !last_segment.contains('.')
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = Config::parse();
@@ -125,14 +138,10 @@ async fn main() -> anyhow::Result<()> {
                 let index = index_path.clone();
                 async move {
                     let path = req.uri().path();
-                    // /api/* and /assets/* miss → 404 (not SPA fallback)
-                    if path.starts_with("/api/")
-                        || path.starts_with("/assets/")
-                        || path.starts_with("/ws/")
-                        || path.starts_with("/uploads/")
-                    {
+                    if !should_spa_fallback(path) {
                         return axum::http::StatusCode::NOT_FOUND.into_response();
                     }
+
                     // Everything else → SPA index.html (navigation routes)
                     match tokio::fs::read(&index).await {
                         Ok(body) => axum::response::Html(body).into_response(),
@@ -200,6 +209,35 @@ fn init_logging(config: &Config) {
             .with(env_filter)
             .with(fmt::layer())
             .init();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_spa_fallback;
+
+    #[test]
+    fn spa_navigation_routes_fall_back_to_index() {
+        assert!(should_spa_fallback("/"));
+        assert!(should_spa_fallback("/profile"));
+        assert!(should_spa_fallback("/messages/direct"));
+    }
+
+    #[test]
+    fn file_like_requests_do_not_fall_back_to_index() {
+        assert!(!should_spa_fallback("/sw.js"));
+        assert!(!should_spa_fallback("/manifest.webmanifest"));
+        assert!(!should_spa_fallback("/favicon.svg"));
+        assert!(!should_spa_fallback("/locales/fi/profile.json"));
+        assert!(!should_spa_fallback("/icons/missing.webp"));
+    }
+
+    #[test]
+    fn reserved_prefixes_never_fall_back_to_index() {
+        assert!(!should_spa_fallback("/api/v1/health"));
+        assert!(!should_spa_fallback("/assets/missing.js"));
+        assert!(!should_spa_fallback("/ws/v2"));
+        assert!(!should_spa_fallback("/uploads/missing.png"));
     }
 }
 

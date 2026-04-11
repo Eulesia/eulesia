@@ -242,5 +242,9 @@
     "offlineTitle": "Ei verkkoyhteyttä",
     "offlineDesc": "Tarkista verkkoyhteytesi ja yritä uudelleen.",
     "retry": "Yritä uudelleen"
+  },
+  "e2ee": {
+    "deviceReadyTitle": "Turvallinen viestintä valmis",
+    "deviceReadyBody": "Tämä selain voi nyt liittyä päästä päähän salattuihin keskusteluihin. Hallitse laitteita asetuksista milloin tahansa."
   }
 }

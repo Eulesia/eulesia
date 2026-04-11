@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { cacheSentDmPlaintext } from "../lib/e2ee/dmPlaintextCache.ts";
 import { useAuth } from "./useAuth";
 import type {
   ThreadFilters,
@@ -16,6 +17,7 @@ import type {
 import type { MapFilterState } from "../components/map/types";
 
 export type CommentSort = "best" | "new" | "old" | "controversial";
+type ConversationTargetDevice = { deviceId: string; userId: string };
 
 // Query keys
 export const queryKeys = {
@@ -67,6 +69,38 @@ export const queryKeys = {
   availableInstitutions: ["availableInstitutions"] as const,
   institutionClaims: ["institutionClaims"] as const,
 };
+
+export async function loadConversationTargetDevices(
+  userIds: string[],
+  currentUserId: string,
+  client: Pick<typeof api, "getUserDevices" | "listDevices"> = api,
+): Promise<ConversationTargetDevice[]> {
+  const uniqueUserIds = [...new Set(userIds)];
+  const deviceLists = await Promise.all(
+    uniqueUserIds.map(async (userId) => {
+      const devices =
+        userId === currentUserId
+          ? await client.listDevices()
+          : await client.getUserDevices(userId);
+
+      return devices.map((device) => ({
+        deviceId: device.id,
+        userId,
+      }));
+    }),
+  );
+
+  const seenDeviceIds = new Set<string>();
+  return deviceLists.flatMap((devices) =>
+    devices.filter(({ deviceId }) => {
+      if (seenDeviceIds.has(deviceId)) {
+        return false;
+      }
+      seenDeviceIds.add(deviceId);
+      return true;
+    }),
+  );
+}
 
 // Auth hooks
 export function useCurrentUser() {
@@ -728,13 +762,87 @@ export function useStartConversation() {
   });
 }
 
-export function useSendDM(conversationId: string) {
+export function useSendDM(
+  conversationId: string,
+  options?: {
+    /** The conversation encryption mode. */
+    encryption?: "e2ee" | "none";
+    /** The local device ID, if E2EE is initialized. */
+    deviceId?: string | null;
+    /** The current authenticated user ID. */
+    userId?: string | null;
+    /** The ID of the other user in the conversation, for device lookup. */
+    otherUserId?: string | null;
+  },
+) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (content: string) =>
-      api.sendDirectMessage(conversationId, content),
-    onSuccess: () => {
+    mutationFn: async (content: string) => {
+      const {
+        encryption = "e2ee",
+        deviceId,
+        userId,
+        otherUserId,
+      } = options ?? {};
+
+      if (encryption !== "e2ee") {
+        return api.sendDirectMessage(conversationId, { content });
+      }
+
+      if (!deviceId) {
+        throw new Error("DEVICE_NOT_INITIALIZED");
+      }
+
+      if (!userId) {
+        throw new Error("USER_ID_UNKNOWN");
+      }
+
+      if (!otherUserId) {
+        throw new Error("RECIPIENT_UNKNOWN");
+      }
+
+      const targetDevices = await loadConversationTargetDevices(
+        [userId, otherUserId],
+        userId,
+      );
+      if (!targetDevices.some((target) => target.userId === otherUserId)) {
+        throw new Error("RECIPIENT_NO_DEVICE");
+      }
+      if (!targetDevices.some((target) => target.deviceId === deviceId)) {
+        throw new Error("SENDER_DEVICE_MISSING");
+      }
+
+      const { encryptForConversation } = await import("../lib/e2ee/index.ts");
+
+      const payload = await encryptForConversation(
+        conversationId,
+        targetDevices,
+        content,
+        api,
+      );
+
+      return api.sendEncryptedDirectMessage(conversationId, {
+        deviceCiphertexts: payload.deviceCiphertexts,
+        senderDeviceId: deviceId,
+      });
+    },
+    onSuccess: (message, content) => {
+      const cachedDeviceId = options?.deviceId;
+      const cachedUserId = options?.userId;
+      if (
+        (options?.encryption ?? "e2ee") === "e2ee" &&
+        cachedDeviceId &&
+        cachedUserId
+      ) {
+        cacheSentDmPlaintext({
+          messageId: message.id,
+          content,
+          deviceId: cachedDeviceId,
+          senderId: cachedUserId,
+        });
+      }
+
       queryClient.invalidateQueries({
         queryKey: queryKeys.conversation(conversationId),
       });
@@ -767,6 +875,125 @@ export function useUnreadDmCount() {
     queryFn: () => api.getUnreadDmCount(),
     refetchInterval: 30_000,
     enabled: isAuthenticated,
+  });
+}
+
+// Group conversation hooks
+export function useGroupConversation(id: string) {
+  return useQuery({
+    queryKey: ["groupConversation", id] as const,
+    queryFn: () => api.getGroupConversation(id),
+    enabled: !!id,
+  });
+}
+
+export function useDeleteGroupMessage(conversationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (messageId: string) =>
+      api.deleteDirectMessage(conversationId, messageId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["groupConversation", conversationId],
+      });
+    },
+  });
+}
+
+export function useGroupMembers(conversationId: string) {
+  return useQuery({
+    queryKey: ["groupMembers", conversationId] as const,
+    queryFn: () => api.getGroupMembers(conversationId),
+    enabled: !!conversationId,
+  });
+}
+
+export function useCreateGroupConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      name: string;
+      description?: string;
+      members: string[];
+    }) => api.createGroupConversation(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
+    },
+  });
+}
+
+export function useInviteGroupMember(conversationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) =>
+      api.inviteGroupMember(conversationId, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["groupMembers", conversationId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["groupConversation", conversationId],
+      });
+    },
+  });
+}
+
+export function useRemoveGroupMember(conversationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) =>
+      api.removeGroupMember(conversationId, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["groupMembers", conversationId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["groupConversation", conversationId],
+      });
+    },
+  });
+}
+
+export function useSendGroupMessage(
+  conversationId: string,
+  options?: {
+    deviceId?: string | null;
+    userId?: string | null;
+  },
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (content: string) => {
+      const { deviceId, userId } = options ?? {};
+      if (!deviceId) throw new Error("DEVICE_NOT_INITIALIZED");
+      if (!userId) throw new Error("USER_ID_UNKNOWN");
+
+      const latestState = await api.getGroupConversationState(conversationId);
+      const memberUserIds = latestState.members.map((member) => member.userId);
+      if (!memberUserIds.length) {
+        throw new Error("GROUP_MEMBERS_UNKNOWN");
+      }
+
+      const { encryptForGroup } = await import("../lib/e2ee/index.ts");
+      const ciphertext = await encryptForGroup(
+        conversationId,
+        content,
+        latestState.currentEpoch,
+        memberUserIds,
+        api,
+      );
+
+      return api.sendGroupMessage(conversationId, {
+        ciphertext,
+        senderDeviceId: deviceId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["groupConversation", conversationId],
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
+    },
   });
 }
 

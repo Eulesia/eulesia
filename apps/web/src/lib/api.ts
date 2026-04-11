@@ -1,6 +1,7 @@
 import { API_BASE_URL } from "./runtimeConfig";
 // Import generated types used in class method signatures before the class.
 import type { MapPoint as MapPointImport } from "../types/generated/MapPoint";
+import type { MessageResponse } from "../types/generated/MessageResponse";
 // Import frontend and admin types used by ApiClient method signatures.
 import type {
   Thread,
@@ -9,7 +10,6 @@ import type {
   ClubThread,
   ClubComment,
   Comment,
-  UserSummary,
   DirectMessage,
   ExploreThread,
   FeedScope,
@@ -41,6 +41,11 @@ import type {
   SubmitAppealData,
   AppealResponse,
   MySanction,
+  Device,
+  ConversationWithMessages,
+  GroupMember,
+  GroupConversationDetail,
+  CreateGroupData,
 } from "../types/frontend";
 import type { UserProfileResponse } from "../types/generated/UserProfileResponse";
 import type {
@@ -189,13 +194,6 @@ interface EditHistoryEntry {
   previousTitle?: string | null;
   editedAt: string;
   editor: { id: string; name: string; avatarUrl?: string };
-}
-
-interface ConversationWithMessages {
-  id: string;
-  encryption?: "e2ee" | "none";
-  otherUser: UserSummary | null;
-  messages: DirectMessage[];
 }
 
 interface CreatePlaceData {
@@ -733,19 +731,25 @@ class ApiClient {
     messageId: string,
     content: string,
   ): Promise<DirectMessage> {
-    return this.request(`/dm/${conversationId}/messages/${messageId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ content }),
-    });
+    return this.request(
+      `/conversations/${conversationId}/messages/${messageId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ content }),
+      },
+    );
   }
 
   async deleteDirectMessage(
     conversationId: string,
     messageId: string,
   ): Promise<{ deleted: boolean }> {
-    return this.request(`/dm/${conversationId}/messages/${messageId}`, {
-      method: "DELETE",
-    });
+    return this.request(
+      `/conversations/${conversationId}/messages/${messageId}`,
+      {
+        method: "DELETE",
+      },
+    );
   }
 
   async getTags(): Promise<TagWithCategory[]> {
@@ -1121,19 +1125,23 @@ class ApiClient {
     );
   }
 
-  // Direct Messages
+  // Conversations (v2 endpoints — support E2EE ciphertext fields)
   async getConversations(): Promise<Conversation[]> {
-    return this.request("/dm");
+    return this.request("/conversations");
   }
 
   async getUnreadDmCount(): Promise<{ count: number }> {
-    return this.request("/dm/unread-count");
+    return this.request("/conversations/unread-count");
   }
 
   async startConversation(userId: string): Promise<Conversation> {
-    return this.request("/dm", {
+    return this.request("/conversations", {
       method: "POST",
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({
+        conversationType: "direct",
+        encryption: "e2ee",
+        members: [userId],
+      }),
     });
   }
 
@@ -1141,22 +1149,351 @@ class ApiClient {
     id: string,
     limit?: number,
   ): Promise<ConversationWithMessages> {
-    const query = limit ? `?limit=${limit}` : "";
-    return this.request(`/dm/${id}${query}`);
+    // Pure v2 path — fetch conversation metadata + messages in parallel.
+    const [conv, messagesResp] = await Promise.all([
+      this.request<{
+        id: string;
+        encryption: string;
+        members: Array<{
+          userId: string;
+          name: string;
+          avatarUrl?: string | null;
+          role: string;
+        }>;
+      }>(`/conversations/${id}`),
+      this.request<MessageResponse[]>(
+        `/conversations/${id}/messages${limit ? `?limit=${limit}` : ""}`,
+      ),
+    ]);
+
+    const memberById = new Map(conv.members.map((m) => [m.userId, m]));
+
+    // API returns newest-first for cursor pagination; reverse to
+    // chronological (oldest-first) for chat rendering.
+    const messages: DirectMessage[] = messagesResp
+      .map((m) => {
+        const member = memberById.get(m.senderId);
+        return {
+          id: m.id,
+          conversationId: m.conversationId,
+          content: m.content ?? null,
+          ciphertext: m.ciphertext || undefined,
+          senderDeviceId: m.senderDeviceId ?? undefined,
+          senderId: m.senderId,
+          messageType: m.messageType,
+          author: member
+            ? {
+                id: member.userId,
+                name: member.name,
+                avatarUrl: member.avatarUrl ?? null,
+                role: "citizen" as const,
+              }
+            : null,
+          createdAt: m.serverTs,
+        };
+      })
+      .reverse();
+
+    return {
+      id: conv.id,
+      encryption: conv.encryption as "e2ee" | "none",
+      otherUser: null, // DM page derives from members
+      members: conv.members,
+      messages,
+    };
+  }
+
+  async getConversationMessages(
+    conversationId: string,
+    options?: {
+      limit?: number;
+      before?: string;
+      messageType?: string;
+    },
+  ): Promise<MessageResponse[]> {
+    const params = new URLSearchParams();
+    if (options?.limit) {
+      params.set("limit", String(options.limit));
+    }
+    if (options?.before) {
+      params.set("before", options.before);
+    }
+    if (options?.messageType) {
+      params.set("messageType", options.messageType);
+    }
+
+    const query = params.toString();
+    return this.request<MessageResponse[]>(
+      `/conversations/${conversationId}/messages${query ? `?${query}` : ""}`,
+    );
+  }
+
+  async markConversationRead(conversationId: string): Promise<void> {
+    await this.request(`/conversations/${conversationId}/read`, {
+      method: "POST",
+    });
   }
 
   async sendDirectMessage(
     conversationId: string,
-    content: string,
-  ): Promise<DirectMessage> {
-    return this.request(`/dm/${conversationId}/messages`, {
+    data: { content: string },
+  ): Promise<MessageResponse> {
+    return this.request(`/conversations/${conversationId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(data),
     });
   }
 
-  async markConversationRead(conversationId: string): Promise<void> {
-    await this.request(`/dm/${conversationId}/read`, { method: "POST" });
+  // E2EE Device management
+  async registerDevice(data: {
+    displayName: string;
+    platform: string;
+    pairingCode?: string;
+  }): Promise<Device> {
+    return this.request("/devices", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createDevicePairingCode(): Promise<{
+    code: string;
+    expiresAt: string;
+  }> {
+    return this.request("/devices/pairing-codes", {
+      method: "POST",
+    });
+  }
+
+  async listDevices(): Promise<Device[]> {
+    return this.request("/devices");
+  }
+
+  async bindCurrentSessionToDevice(deviceId: string): Promise<void> {
+    await this.request(`/devices/${deviceId}/bind`, {
+      method: "POST",
+    });
+  }
+
+  async revokeDevice(deviceId: string): Promise<void> {
+    await this.request(`/devices/${deviceId}`, { method: "DELETE" });
+  }
+
+  async getUserDevices(userId: string): Promise<Device[]> {
+    return this.request(`/users/${userId}/devices`);
+  }
+
+  async uploadMatrixKeys(
+    deviceId: string,
+    data: {
+      device_keys?: {
+        user_id: string;
+        device_id: string;
+        keys: Record<string, string>;
+        signatures: Record<string, Record<string, string>>;
+      };
+      one_time_keys?: Record<
+        string,
+        {
+          key: string;
+          signatures: Record<string, Record<string, string>>;
+        }
+      >;
+      fallback_keys?: Record<
+        string,
+        {
+          key: string;
+          signatures: Record<string, Record<string, string>>;
+        }
+      >;
+    },
+  ): Promise<{ one_time_key_counts: Record<string, number> }> {
+    return this.request(`/devices/${deviceId}/matrix/keys/upload`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async queryMatrixKeys(data: {
+    device_keys: Record<string, string[]>;
+    timeout?: number;
+    token?: string;
+  }): Promise<{
+    device_keys: Record<string, Record<string, unknown>>;
+    master_keys: Record<string, unknown>;
+    self_signing_keys: Record<string, unknown>;
+    failures: Record<string, unknown>;
+  }> {
+    return this.request("/devices/matrix/keys/query", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async claimMatrixKeys(data: {
+    one_time_keys: Record<string, Record<string, string>>;
+    timeout?: number;
+  }): Promise<{
+    one_time_keys: Record<string, Record<string, Record<string, unknown>>>;
+    failures: Record<string, unknown>;
+  }> {
+    return this.request("/devices/matrix/keys/claim", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async sendEncryptedDirectMessage(
+    conversationId: string,
+    data: {
+      deviceCiphertexts: Record<string, string>;
+      senderDeviceId: string;
+    },
+  ): Promise<DirectMessage> {
+    return this.request(`/conversations/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Group conversations
+  async createGroupConversation(data: CreateGroupData): Promise<Conversation> {
+    return this.request("/conversations", {
+      method: "POST",
+      body: JSON.stringify({
+        conversationType: "group",
+        encryption: "e2ee",
+        ...data,
+      }),
+    });
+  }
+
+  async getGroupConversation(
+    id: string,
+    limit?: number,
+  ): Promise<GroupConversationDetail> {
+    const [meta, members, messagesResp, protocolMessagesResp] =
+      await Promise.all([
+        this.request<{
+          id: string;
+          encryption: string;
+          name: string | null;
+          description: string | null;
+          currentEpoch: number;
+        }>(`/conversations/${id}`),
+        this.getGroupMembers(id),
+        this.getConversationMessages(id, { limit }),
+        this.getConversationMessages(id, {
+          limit: 100,
+          messageType: "to_device",
+        }),
+      ]);
+
+    const memberById = new Map(members.map((m) => [m.userId, m]));
+    const toDirectMessage = (m: MessageResponse): DirectMessage => {
+      const member = memberById.get(m.senderId);
+      return {
+        id: m.id,
+        conversationId: m.conversationId,
+        content: m.content ?? null,
+        ciphertext: m.ciphertext || undefined,
+        senderDeviceId: m.senderDeviceId ?? undefined,
+        senderId: m.senderId,
+        messageType: m.messageType,
+        author: member
+          ? {
+              id: member.userId,
+              name: member.name,
+              avatarUrl: member.avatarUrl ?? null,
+              role: "citizen" as const,
+            }
+          : null,
+        createdAt: m.serverTs,
+      };
+    };
+
+    // API returns newest-first for cursor pagination; reverse to
+    // chronological (oldest-first) for chat rendering.
+    const messages = messagesResp.map(toDirectMessage).reverse();
+    const protocolMessagesById = new Map(
+      protocolMessagesResp.map((message) => [
+        message.id,
+        toDirectMessage(message),
+      ]),
+    );
+
+    return {
+      id: meta.id,
+      name: meta.name ?? "Group",
+      description: meta.description,
+      encryption: meta.encryption,
+      currentEpoch: meta.currentEpoch,
+      members,
+      messages,
+      protocolMessages: [...protocolMessagesById.values()],
+    };
+  }
+
+  async getGroupConversationState(id: string): Promise<{
+    currentEpoch: number;
+    members: GroupMember[];
+  }> {
+    const [meta, members] = await Promise.all([
+      this.request<{ currentEpoch: number }>(`/conversations/${id}`),
+      this.getGroupMembers(id),
+    ]);
+
+    return {
+      currentEpoch: meta.currentEpoch,
+      members,
+    };
+  }
+
+  async getGroupMembers(conversationId: string): Promise<GroupMember[]> {
+    return this.request(`/conversations/${conversationId}/members`);
+  }
+
+  async inviteGroupMember(
+    conversationId: string,
+    userId: string,
+  ): Promise<void> {
+    await this.request(`/conversations/${conversationId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ userId }),
+    });
+  }
+
+  async removeGroupMember(
+    conversationId: string,
+    userId: string,
+  ): Promise<void> {
+    await this.request(`/conversations/${conversationId}/members/${userId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async sendGroupMessage(
+    conversationId: string,
+    data: { ciphertext: string; senderDeviceId: string },
+  ): Promise<DirectMessage> {
+    return this.request(`/conversations/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** Send a hidden Matrix to-device payload through the group device queue. */
+  async sendGroupToDevice(
+    conversationId: string,
+    data: {
+      deviceCiphertexts: Record<string, string>;
+      senderDeviceId: string;
+    },
+  ): Promise<void> {
+    return this.request(`/conversations/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ ...data, messageType: "to_device" }),
+    });
   }
 
   // Notifications

@@ -10,6 +10,11 @@ pub struct Model {
     pub key_id: i64,
     #[sea_orm(column_type = "VarBinary(StringLen::None)")]
     pub key_data: Vec<u8>,
+    #[sea_orm(column_type = "VarBinary(StringLen::None)", nullable)]
+    pub key_signature: Option<Vec<u8>>,
+    pub key_algorithm: Option<String>,
+    pub matrix_key_id: Option<String>,
+    pub is_fallback: bool,
     pub uploaded_at: DateTimeWithTimeZone,
     pub consumed_at: Option<DateTimeWithTimeZone>,
 }

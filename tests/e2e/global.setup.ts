@@ -125,12 +125,50 @@ async function setupUser2Auth(): Promise<void> {
   await ctx.dispose();
 }
 
+async function waitForUserSearchability(timeoutMs = 20_000): Promise<void> {
+  const start = Date.now();
+  const userAuthPath = path.join(AUTH_DIR, "user.json");
+  const ctx = await request.newContext({
+    baseURL: API_URL,
+    storageState: userAuthPath,
+  });
+
+  try {
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const res = await ctx.get(
+          `/api/v1/search/users?q=${encodeURIComponent(TEST_USER_2.username)}&limit=1`,
+        );
+
+        if (res.ok()) {
+          const body = await res.json();
+          const users = body.data?.items ?? body.data ?? [];
+          if (users.length > 0) {
+            return;
+          }
+        }
+      } catch {
+        // Search index or API may still be catching up after registration.
+      }
+
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  } finally {
+    await ctx.dispose();
+  }
+
+  throw new Error(
+    `User search did not return ${TEST_USER_2.username} within ${timeoutMs}ms`,
+  );
+}
+
 async function globalSetup(_config: FullConfig): Promise<void> {
   fs.mkdirSync(AUTH_DIR, { recursive: true });
 
   await waitForApi();
   await setupUserAuth();
   await setupUser2Auth();
+  await waitForUserSearchability();
   await setupAdminAuth();
 }
 

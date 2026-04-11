@@ -1,8 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
-import { useThreads, useTags, useClubs } from "./useApi";
+import {
+  loadConversationTargetDevices,
+  useSendDM,
+  useThreads,
+  useTags,
+  useClubs,
+} from "./useApi";
+
+const makeDevice = (id: string) => ({
+  id,
+  platform: "web",
+  createdAt: new Date(0).toISOString(),
+});
 
 // Helper: create a mock Response with Content-Type: application/json
 const jsonResponse = (body: unknown, ok = true) => ({
@@ -196,6 +208,87 @@ describe("useApi hooks", () => {
           expect.any(Object),
         );
       });
+    });
+  });
+
+  describe("loadConversationTargetDevices", () => {
+    it("includes the sender's own devices and de-duplicates shared IDs", async () => {
+      const client: NonNullable<
+        Parameters<typeof loadConversationTargetDevices>[2]
+      > = {
+        listDevices: vi
+          .fn()
+          .mockResolvedValue([
+            makeDevice("self-device"),
+            makeDevice("shared-device"),
+          ]),
+        getUserDevices: vi
+          .fn()
+          .mockResolvedValue([
+            makeDevice("shared-device"),
+            makeDevice("peer-device"),
+          ]),
+      };
+
+      const devices = await loadConversationTargetDevices(
+        ["me", "peer", "me"],
+        "me",
+        client,
+      );
+
+      expect(client.listDevices).toHaveBeenCalledTimes(1);
+      expect(client.getUserDevices).toHaveBeenCalledWith("peer");
+      expect(devices).toEqual([
+        { deviceId: "self-device", userId: "me" },
+        { deviceId: "shared-device", userId: "me" },
+        { deviceId: "peer-device", userId: "peer" },
+      ]);
+    });
+  });
+
+  describe("useSendDM", () => {
+    it("keeps plaintext conversations on the plaintext send path", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          data: {
+            id: "msg-1",
+            conversationId: "conv-1",
+            senderId: "user-1",
+            senderDeviceId: null,
+            epoch: 0,
+            ciphertext: "",
+            content: "hello world",
+            messageType: "text",
+            serverTs: new Date(0).toISOString(),
+          },
+        }),
+      );
+
+      const { result } = renderHook(
+        () =>
+          useSendDM("conv-1", {
+            encryption: "none",
+            deviceId: null,
+            userId: "user-1",
+            otherUserId: "user-2",
+          }),
+        {
+          wrapper: createWrapper(),
+        },
+      );
+
+      await act(async () => {
+        await result.current.mutateAsync("hello world");
+      });
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/conversations/conv-1/messages"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ content: "hello world" }),
+        }),
+      );
     });
   });
 });

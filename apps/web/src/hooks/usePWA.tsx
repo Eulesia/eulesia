@@ -28,90 +28,92 @@ const PWAContext = createContext<PWAContextType>({
   installApp: async () => {},
 });
 
-const PWA_DISABLED_HOSTS = new Set(["test.eulesia.org"]);
+const LEGACY_CACHE_PREFIXES = ["workbox-", "eulesia-"];
+
+function getRegistrationScriptUrls(
+  registration: ServiceWorkerRegistration,
+): string[] {
+  return [
+    registration.active?.scriptURL,
+    registration.installing?.scriptURL,
+    registration.waiting?.scriptURL,
+  ].filter((value): value is string => Boolean(value));
+}
+
+async function cleanupLegacyServiceWorkers() {
+  const registrations = await navigator.serviceWorker.getRegistrations();
+
+  await Promise.all(
+    registrations.map(async (registration) => {
+      const shouldRemove = getRegistrationScriptUrls(registration).some(
+        (scriptUrl) => {
+          try {
+            return new URL(scriptUrl).pathname === "/sw.js";
+          } catch {
+            return scriptUrl.endsWith("/sw.js");
+          }
+        },
+      );
+
+      if (shouldRemove) {
+        await registration.unregister();
+      }
+    }),
+  );
+
+  if (!("caches" in window)) {
+    return;
+  }
+
+  const cacheNames = await caches.keys();
+  await Promise.all(
+    cacheNames
+      .filter((cacheName) =>
+        LEGACY_CACHE_PREFIXES.some((prefix) => cacheName.startsWith(prefix)),
+      )
+      .map((cacheName) => caches.delete(cacheName)),
+  );
+}
 
 export function PWAProvider({ children }: { children: ReactNode }) {
-  const [needRefresh, setNeedRefresh] = useState(false);
-  const [offlineReady, setOfflineReady] = useState(false);
-  const [registration, setRegistration] =
-    useState<ServiceWorkerRegistration | null>(null);
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
-    // Capture install prompt before it's shown
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setInstallPrompt(e as BeforeInstallPromptEvent);
+    const handler = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
     };
+
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
   useEffect(() => {
-    async function registerSW() {
-      if (!("serviceWorker" in navigator)) return;
-
-      if (PWA_DISABLED_HOSTS.has(window.location.hostname)) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(registrations.map((r) => r.unregister()));
-
-        if ("caches" in window) {
-          const cacheNames = await caches.keys();
-          await Promise.all(
-            cacheNames.map((cacheName) => caches.delete(cacheName)),
-          );
-        }
-
-        setRegistration(null);
-        setNeedRefresh(false);
-        setOfflineReady(false);
+    async function cleanupWorkers() {
+      if (!("serviceWorker" in navigator)) {
         return;
       }
 
       try {
-        const { registerSW } = await import("virtual:pwa-register");
-        registerSW({
-          immediate: true,
-          onRegisteredSW(_swUrl, r) {
-            if (r) {
-              setRegistration(r);
-              // Check for updates periodically (every 10 minutes)
-              setInterval(
-                () => {
-                  r.update();
-                },
-                10 * 60 * 1000,
-              );
-            }
-          },
-          onOfflineReady() {
-            setOfflineReady(true);
-          },
-          onNeedRefresh() {
-            // With registerType: "autoUpdate" + skipWaiting + clientsClaim,
-            // the new SW activates immediately. Auto-reload instead of
-            // showing an update banner — users should never need to click.
-            window.location.reload();
-          },
-        });
+        await cleanupLegacyServiceWorkers();
       } catch {
-        // SW registration fails in dev mode, that's fine
+        // Legacy service worker cleanup is best effort.
       }
     }
-    registerSW();
+
+    void cleanupWorkers();
   }, []);
 
   const updateServiceWorker = useCallback(() => {
-    if (registration?.waiting) {
-      registration.waiting.postMessage({ type: "SKIP_WAITING" });
-      setNeedRefresh(false);
-      window.location.reload();
-    }
-  }, [registration]);
+    window.location.reload();
+  }, []);
 
   const installApp = useCallback(async () => {
-    if (!installPrompt) return;
+    if (!installPrompt) {
+      return;
+    }
+
     await installPrompt.prompt();
     const { outcome } = await installPrompt.userChoice;
     if (outcome === "accepted") {
@@ -122,9 +124,9 @@ export function PWAProvider({ children }: { children: ReactNode }) {
   return (
     <PWAContext.Provider
       value={{
-        needRefresh,
+        needRefresh: false,
         updateServiceWorker,
-        offlineReady,
+        offlineReady: false,
         canInstall: !!installPrompt,
         installApp,
       }}

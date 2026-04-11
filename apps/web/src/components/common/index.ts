@@ -13,6 +13,7 @@ export { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 export { EditedIndicator } from "./EditedIndicator";
 export { LinkPreview } from "./LinkPreview";
 export { ContentWithPreviews } from "./ContentWithPreviews";
+export { LinkifiedText } from "./LinkifiedText";
 export { ShareButtons } from "./ShareButtons";
 export { PageErrorBoundary } from "./PageErrorBoundary";
 export { ErrorState } from "./ErrorState";

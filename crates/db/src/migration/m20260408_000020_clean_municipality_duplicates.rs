@@ -11,6 +11,7 @@ use sea_orm_migration::prelude::*;
 pub struct Migration;
 
 impl MigrationName for Migration {
+    #[allow(clippy::unnecessary_literal_bound)]
     fn name(&self) -> &str {
         "m20260408_000020_clean_municipality_duplicates"
     }

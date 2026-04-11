@@ -4,7 +4,11 @@
   lib,
   pkgs,
   ...
-}: {
+}: let
+  frontendRealmVersion = builtins.substring 0 12 (
+    builtins.baseNameOf (toString eulesiaPackages.frontendTest)
+  );
+in {
   imports = [
     ./lib/hetzner-cloud-hardware.nix
     ./eulesia-test-disks.nix
@@ -105,7 +109,7 @@
         middlewares = {
           eulesia-test-auth.basicAuth = {
             usersFile = "/run/eulesia-test/traefik-basic-auth.users";
-            realm = "Eulesia Test";
+            realm = "Eulesia Test ${frontendRealmVersion}";
           };
 
           security-headers.headers = {

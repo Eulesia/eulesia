@@ -235,7 +235,7 @@ mod tests {
             .append_query_results([vec![m1, m2]])
             .into_connection();
 
-        let result = ConversationRepo::messages_page(&db, conv_id, None, 50)
+        let result = ConversationRepo::messages_page(&db, conv_id, None, 50, None)
             .await
             .unwrap();
         assert_eq!(result.len(), 2);
@@ -252,7 +252,7 @@ mod tests {
             .into_connection();
 
         let cursor = Uuid::now_v7();
-        let result = ConversationRepo::messages_page(&db, conv_id, Some(cursor), 50)
+        let result = ConversationRepo::messages_page(&db, conv_id, Some(cursor), 50, None)
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
@@ -264,7 +264,7 @@ mod tests {
             .append_query_results([Vec::<messages::Model>::new()])
             .into_connection();
 
-        let result = ConversationRepo::messages_page(&db, Uuid::now_v7(), None, 50)
+        let result = ConversationRepo::messages_page(&db, Uuid::now_v7(), None, 50, None)
             .await
             .unwrap();
         assert!(result.is_empty());
