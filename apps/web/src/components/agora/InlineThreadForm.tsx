@@ -320,13 +320,15 @@ export function InlineThreadForm({
             </button>
           </div>
 
-          {/* Location search for local scope (when not prefilled) */}
+          {/* Location search for local scope (when not prefilled). Accepts
+              any location type so users can post to a neighborhood, a former
+              municipality (e.g. Lohtaja), a named place, or a region — the
+              server derives the hierarchical ancestor chain on write. */}
           {!isPrefilled && scope === "local" && (
             <LocationSearch
               value={selectedLocation}
               onChange={setSelectedLocation}
               country="FI"
-              types={["municipality", "village", "city"]}
               placeholder={t("threadForm.locationPlaceholder")}
             />
           )}
