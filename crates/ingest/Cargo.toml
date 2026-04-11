@@ -1,0 +1,25 @@
+[package]
+name = "eulesia-ingest"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+eulesia-common = { path = "../common" }
+eulesia-db = { path = "../db" }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+pdf-extract = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+scraper = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = "2"
+uuid = { workspace = true }

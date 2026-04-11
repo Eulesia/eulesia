@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 eulesia-common = { path = "../common" }
 eulesia-db = { path = "../db" }
+eulesia-ingest = { path = "../ingest" }
 eulesia-notify = { path = "../notify" }
 eulesia-search = { path = "../search" }
 anyhow = { workspace = true }

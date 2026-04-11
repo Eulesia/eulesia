@@ -14,6 +14,7 @@ use tracing::{error, info, warn};
 use crate::geo_places::{
     LipasImportConfig, LipasImportReport, OsmImportConfig, OsmImportReport, PlaceImportError,
 };
+use crate::minutes_import::{MinutesImportConfig, MinutesImportReport, MinutesJobError};
 use eulesia_common::types::JobStatus;
 use eulesia_db::repo::jobs::JobRepo;
 use eulesia_db::seed::{self, MunicipalitySyncReport};
@@ -22,6 +23,7 @@ use eulesia_db::seed::{self, MunicipalitySyncReport};
 pub struct ImportConfig {
     pub lipas: LipasImportConfig,
     pub osm: OsmImportConfig,
+    pub minutes: MinutesImportConfig,
 }
 
 #[derive(Clone)]
@@ -41,6 +43,8 @@ pub enum SchedulerError {
     Scheduler(#[from] tokio_cron_scheduler::JobSchedulerError),
     #[error("place import error: {0}")]
     Place(#[from] PlaceImportError),
+    #[error("minutes import error: {0}")]
+    Minutes(#[from] MinutesJobError),
     #[error("job skipped because another runner is active: {0}")]
     Skipped(String),
 }
@@ -95,6 +99,25 @@ pub async fn run(
                 match run_osm_place_sync(osm_ctx).await {
                     Ok(_) | Err(SchedulerError::Skipped(_)) => {}
                     Err(error) => error!(error = %error, "scheduled osm place sync failed"),
+                }
+            }
+        },
+    )
+    .await?;
+
+    let minutes_ctx = Arc::clone(&ctx);
+    let minutes_schedule = ctx.imports.minutes.schedule.clone();
+    add_optional_job(
+        &scheduler,
+        ctx.imports.minutes.enabled,
+        "minutes import",
+        &minutes_schedule,
+        move || {
+            let minutes_ctx = Arc::clone(&minutes_ctx);
+            async move {
+                match run_minutes_import(minutes_ctx).await {
+                    Ok(_) | Err(SchedulerError::Skipped(_)) => {}
+                    Err(error) => error!(error = %error, "scheduled minutes import failed"),
                 }
             }
         },
@@ -185,6 +208,20 @@ pub async fn run_osm_place_sync(
         "osm-place-sync",
         &cursor_value,
         || async move { Ok(crate::geo_places::sync_osm_places(&ctx.db, &ctx.imports.osm).await?) },
+    )
+    .await
+}
+
+pub async fn run_minutes_import(
+    ctx: Arc<SchedulerContext>,
+) -> Result<MinutesImportReport, SchedulerError> {
+    let cursor_value = Utc::now().to_rfc3339();
+
+    run_locked_job(
+        Arc::clone(&ctx),
+        "minutes-import",
+        &cursor_value,
+        || async move { Ok(crate::minutes_import::run(&ctx.db, &ctx.imports.minutes).await?) },
     )
     .await
 }

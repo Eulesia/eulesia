@@ -47,6 +47,38 @@ struct Config {
 
     #[arg(long, env = "EULESIA_JOBS_OSM_TIMEOUT_SECONDS", default_value_t = 180)]
     osm_timeout_seconds: u32,
+
+    #[arg(long, env = "EULESIA_JOBS_MINUTES_ENABLED")]
+    minutes_enabled: bool,
+
+    #[arg(
+        long,
+        env = "EULESIA_JOBS_MINUTES_SCHEDULE",
+        default_value = "0 30 2 * * *"
+    )]
+    minutes_schedule: String,
+
+    #[arg(long, env = "EULESIA_JOBS_MINUTES_MAX_AGE_DAYS", default_value_t = 7)]
+    minutes_max_age_days: i64,
+
+    #[arg(
+        long,
+        env = "EULESIA_JOBS_MINUTES_LIMIT_PER_SOURCE",
+        default_value_t = 10
+    )]
+    minutes_limit_per_source: usize,
+
+    #[arg(long, env = "EULESIA_JOBS_MINUTES_DRY_RUN")]
+    minutes_dry_run: bool,
+
+    #[arg(long, env = "MISTRAL_API_KEY", default_value = "")]
+    mistral_api_key: String,
+
+    #[arg(long, env = "MISTRAL_MODEL")]
+    mistral_model: Option<String>,
+
+    #[arg(long, env = "MISTRAL_RATE_LIMIT_MS")]
+    mistral_rate_limit_ms: Option<u64>,
 }
 
 #[tokio::main]
@@ -73,6 +105,16 @@ async fn main() -> anyhow::Result<()> {
                 enabled: config.osm_enabled,
                 interpreter_url: config.osm_interpreter_url.clone(),
                 timeout_seconds: config.osm_timeout_seconds,
+            },
+            minutes: eulesia_jobs::minutes_import::MinutesImportConfig {
+                enabled: config.minutes_enabled,
+                schedule: config.minutes_schedule.clone(),
+                mistral_api_key: config.mistral_api_key.clone(),
+                mistral_model: config.mistral_model.clone(),
+                rate_limit_ms: config.mistral_rate_limit_ms,
+                max_age_days: config.minutes_max_age_days,
+                limit_per_source: config.minutes_limit_per_source,
+                dry_run: config.minutes_dry_run,
             },
         },
     });
@@ -113,6 +155,10 @@ async fn run_named_job(
         "osm-place-sync" => {
             let report = eulesia_jobs::scheduler::run_osm_place_sync(ctx).await?;
             info!(?report, "named osm place sync completed");
+        }
+        "minutes-import" => {
+            let report = eulesia_jobs::scheduler::run_minutes_import(ctx).await?;
+            info!(?report, "named minutes import completed");
         }
         other => anyhow::bail!("unknown job name: {other}"),
     }

@@ -5,6 +5,7 @@ members = [
   "crates/db",
   "crates/auth",
   "crates/api",
+  "crates/ingest",
   "crates/jobs",
   "crates/notify",
   "crates/ws",
@@ -51,6 +52,8 @@ jsonwebtoken = "9"
 josekit = "0.8"
 regex = "1"
 reqwest = { version = "0.12", features = ["json"] }
+scraper = "0.20"
+pdf-extract = "0.7"
 dashmap = "6"
 meilisearch-sdk = "0.28"
 ts-rs = { version = "12", features = ["uuid-impl", "chrono-impl", "serde-json-impl"] }
