@@ -72,6 +72,9 @@ pub struct MinuteSource {
     pub language: String,
     /// Region label for welfare areas ("hyvinvointialueet"), optional.
     pub region: Option<String>,
+    /// Dynasty-specific path prefix (e.g. `/D10_Haapajarvi` or `/djulkaisu`)
+    /// used when constructing PDF URLs via the CGI pattern.
+    pub path_prefix: Option<String>,
 }
 
 /// Contract implemented by each system-specific fetcher.

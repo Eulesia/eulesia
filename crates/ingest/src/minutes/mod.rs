@@ -14,12 +14,16 @@ use tracing::{info, warn};
 
 use crate::ai::MistralClient;
 use crate::error::IngestError;
-use crate::fetchers::{FetcherType, MFilesFetcher, Meeting, MinuteFetcher, MinuteSource};
+use crate::fetchers::{
+    CloudNcFetcher, DynastyFetcher, FetcherType, MFilesFetcher, Meeting, MinuteFetcher,
+    MinuteSource, TwebFetcher,
+};
 use crate::sources::all_sources;
 
 pub mod dates;
 pub mod dedup;
 pub mod institutions;
+pub mod location_resolver;
 pub mod pipeline;
 pub mod thread_writer;
 
@@ -93,8 +97,20 @@ pub async fn run_import(
     );
 
     // Build one fetcher instance per fetcher type, owning its own rate limiter.
-    // Phase 1 only knows about M-Files.
     let mfiles = MFilesFetcher::new()?;
+    let dynasty = DynastyFetcher::new()?;
+    let cloudnc = CloudNcFetcher::new()?;
+    let tweb = TwebFetcher::new()?;
+
+    let pick_fetcher = |ty: FetcherType| -> Option<&dyn MinuteFetcher> {
+        match ty {
+            FetcherType::MFiles => Some(&mfiles as &dyn MinuteFetcher),
+            FetcherType::Dynasty => Some(&dynasty as &dyn MinuteFetcher),
+            FetcherType::CloudNc => Some(&cloudnc as &dyn MinuteFetcher),
+            FetcherType::Tweb => Some(&tweb as &dyn MinuteFetcher),
+            FetcherType::Adaptive => None,
+        }
+    };
 
     // Pre-fetch meeting lists for every source so we can round-robin them
     // after filtering. Rate limits apply per-fetcher instance internally.
@@ -103,15 +119,12 @@ pub async fn run_import(
 
     for source in filtered {
         report.sources_processed += 1;
-        let fetcher: &dyn MinuteFetcher = match source.fetcher_type {
-            FetcherType::MFiles => &mfiles,
-            other => {
-                report.errors.push(format!(
-                    "{}: fetcher type {:?} not implemented in phase 1",
-                    source.entity_name, other
-                ));
-                continue;
-            }
+        let Some(fetcher) = pick_fetcher(source.fetcher_type) else {
+            report.errors.push(format!(
+                "{}: fetcher type {:?} not implemented yet",
+                source.entity_name, source.fetcher_type
+            ));
+            continue;
         };
         let meetings = match fetcher.fetch_meetings(&source).await {
             Ok(m) => m,
@@ -143,9 +156,8 @@ pub async fn run_import(
             };
             any_work = true;
 
-            let fetcher: &dyn MinuteFetcher = match source.fetcher_type {
-                FetcherType::MFiles => &mfiles,
-                _ => continue,
+            let Some(fetcher) = pick_fetcher(source.fetcher_type) else {
+                continue;
             };
 
             let result = pipeline::process_meeting(

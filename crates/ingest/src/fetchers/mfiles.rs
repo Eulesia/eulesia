@@ -268,6 +268,7 @@ mod tests {
             country: "FI".into(),
             language: "fi".into(),
             region: None,
+            path_prefix: None,
         }
     }
 

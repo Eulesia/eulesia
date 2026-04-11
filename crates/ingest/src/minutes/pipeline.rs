@@ -11,6 +11,7 @@ use crate::minutes::institutions::{
     InstitutionKind, find_municipality_by_name, get_or_create_institution,
     resolve_location_for_entity,
 };
+use crate::minutes::location_resolver::{ResolvedLocation, resolve_location_hints};
 use crate::minutes::thread_writer::{ThreadContext, create_thread_from_article};
 use crate::minutes::{MinutesImportOptions, MinutesImportReport};
 
@@ -131,6 +132,32 @@ pub async fn process_meeting(
             info!(item = %item_source_id, issues = ?verification.issues, "verification minor issues");
         }
 
+        // Stage 3.5: resolve any location hints the writer surfaced.
+        // Failures here are non-fatal — fall back to the default location.
+        let resolved: ResolvedLocation =
+            match resolve_location_hints(db, &draft.location_hints, municipality_id, location_id)
+                .await
+            {
+                Ok(r) => r,
+                Err(err) => {
+                    warn!(item = %item_source_id, error = %err, "location hint resolution failed");
+                    ResolvedLocation {
+                        place_id: None,
+                        location_id,
+                        matched_hint: None,
+                    }
+                }
+            };
+        if let Some(hint) = &resolved.matched_hint {
+            info!(
+                item = %item_source_id,
+                hint = %hint,
+                place_id = ?resolved.place_id,
+                location_id = ?resolved.location_id,
+                "resolved location hint"
+            );
+        }
+
         if options.dry_run {
             info!(
                 item = %item_source_id,
@@ -148,7 +175,8 @@ pub async fn process_meeting(
             item_source_id: &item_source_id,
             institution_id,
             municipality_id,
-            location_id,
+            location_id: resolved.location_id,
+            place_id: resolved.place_id,
             model_name: mistral.model(),
         };
         create_thread_from_article(db, &draft, &ctx).await?;
@@ -179,6 +207,7 @@ mod tests {
             country: "FI".into(),
             language: "fi".into(),
             region: None,
+            path_prefix: None,
         }
     }
 

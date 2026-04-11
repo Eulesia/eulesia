@@ -24,6 +24,9 @@ pub struct ThreadContext<'a> {
     pub institution_id: Uuid,
     pub municipality_id: Option<Uuid>,
     pub location_id: Option<Uuid>,
+    /// Optional `places.id` resolved from AI location hints — set when the
+    /// minutes mention a specific named location inside the kunta.
+    pub place_id: Option<Uuid>,
     pub model_name: &'a str,
 }
 
@@ -54,7 +57,7 @@ pub async fn create_thread_from_article(
         country: Set(Some(ctx.source.country.clone())),
         municipality_id: Set(ctx.municipality_id),
         location_id: Set(ctx.location_id),
-        place_id: Set(None),
+        place_id: Set(ctx.place_id),
         latitude: Set(None),
         longitude: Set(None),
         institutional_context: Set(None),
@@ -154,6 +157,7 @@ mod tests {
             summary: "Yhteenveto".into(),
             key_points: vec!["Kohta 1".into(), "Kohta 2".into()],
             tags: vec![],
+            location_hints: vec![],
         };
         let html = build_content(&draft, "https://example.com/p");
         assert!(html.contains("Yhteenveto"));
@@ -170,6 +174,7 @@ mod tests {
             summary: "Yhteenveto".into(),
             key_points: vec![],
             tags: vec![],
+            location_hints: vec![],
         };
         let html = build_content(&draft, "https://example.com");
         assert!(!html.contains("summary-keypoints"));

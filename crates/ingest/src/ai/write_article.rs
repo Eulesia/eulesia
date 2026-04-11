@@ -15,6 +15,14 @@ pub struct ArticleDraft {
     pub key_points: Vec<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Free-text location mentions extracted from the source excerpt:
+    /// place names, districts, streets, landmarks. The downstream
+    /// [`crate::minutes::location_resolver`] tries to resolve each hint
+    /// into a concrete `locations` or `places` row so threads attach to
+    /// the most specific available hierarchy level (kaupunginosa, katu,
+    /// paikka) instead of only the kunta baseline.
+    #[serde(rename = "locationHints", default)]
+    pub location_hints: Vec<String>,
 }
 
 /// Ask Mistral to turn an agenda item excerpt into a short article.

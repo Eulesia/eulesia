@@ -82,6 +82,15 @@ Ohjeet:
 - Ole neutraali — älä ota kantaa
 - Otsikon tulee olla informatiivinen, ei klikkiotsikko
 
+PAIKKATIEDOT (tärkeä):
+Poimi "locationHints"-kenttään kaikki otteessa mainitut konkreettiset paikat jotka tarkentavat missä asia tapahtuu kunnan sisällä:
+- Kaupunginosat (esim. "Lauritsala", "Sammonlahti", "Linnunlahti")
+- Kadut ja osoitteet (esim. "Brahenkatu 5", "Kauppakatu")
+- Nimetyt paikat (esim. "Lauritsalan koulu", "Skinnarilan kampus", "Saimaan ranta", "Kirjasto")
+- Kylät, kaupunginosat, maantieteelliset alueet
+Jätä pois kunnan nimi itsessään (se tulee automaattisesti) ja yleiset sanat kuten "kunta", "kaupunki".
+Jos otteessa ei mainita mitään spesifisempää paikkaa kuin kunta, palauta tyhjä lista.
+
 Vastaa JSON-muodossa:
 {
   "title": "Selkeä otsikko (max 100 merkkiä)",
@@ -91,7 +100,8 @@ Vastaa JSON-muodossa:
     "Keskeinen kohta 2",
     "Keskeinen kohta 3"
   ],
-  "tags": ["aihe1", "aihe2"]
+  "tags": ["aihe1", "aihe2"],
+  "locationHints": ["Lauritsala", "Brahenkatu 5"]
 }"#;
 
 /// Stage 2 — article writing user prompt template.
