@@ -237,7 +237,12 @@ where
     F: FnOnce() -> Fut,
     Fut: Future<Output = Result<T, SchedulerError>>,
 {
-    let (lock_client, lock_connection) = tokio_postgres::connect(&ctx.database_url, NoTls).await?;
+    // tokio_postgres::connect requires an explicit host in the connection
+    // string. Unix-socket URLs like `postgresql:///eulesia_v2` (no host)
+    // work with sqlx but fail tokio_postgres with "both host and hostaddr
+    // are missing". Append a default localhost host if none is present.
+    let lock_url = ensure_host_in_url(&ctx.database_url);
+    let (lock_client, lock_connection) = tokio_postgres::connect(&lock_url, NoTls).await?;
     tokio::spawn(async move {
         if let Err(error) = lock_connection.await {
             warn!(error = %error, "job lock connection closed");
@@ -315,6 +320,30 @@ where
     result
 }
 
+/// Ensure the connection string has a host. Unix-socket URLs like
+/// `postgresql:///dbname` are valid libpq notation but tokio_postgres
+/// rejects them with "both host and hostaddr are missing". Adding
+/// `?host=/var/run/postgresql` or `host=localhost` fixes it.
+fn ensure_host_in_url(url: &str) -> String {
+    // If the URL already has a host component (anything between :// and the
+    // next / or ?), leave it alone.
+    if let Some(after_scheme) = url.strip_prefix("postgresql://") {
+        if after_scheme.starts_with('/') {
+            // No host: postgresql:///dbname → postgresql://localhost/dbname
+            // Use localhost so tokio_postgres connects via TCP to the local
+            // PostgreSQL. Alternatively we could use ?host=/var/run/postgresql
+            // for Unix sockets, but TCP to localhost is universally safe.
+            return format!("postgresql://localhost{after_scheme}");
+        }
+    }
+    if let Some(after_scheme) = url.strip_prefix("postgres://") {
+        if after_scheme.starts_with('/') {
+            return format!("postgres://localhost{after_scheme}");
+        }
+    }
+    url.to_string()
+}
+
 fn advisory_lock_key(job_name: &str) -> i64 {
     let mut hasher = Sha256::new();
     hasher.update(b"eulesia-jobs:");
@@ -328,7 +357,31 @@ fn advisory_lock_key(job_name: &str) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::advisory_lock_key;
+    use super::{advisory_lock_key, ensure_host_in_url};
+
+    #[test]
+    fn ensure_host_adds_localhost_for_unix_socket_url() {
+        assert_eq!(
+            ensure_host_in_url("postgresql:///eulesia_v2"),
+            "postgresql://localhost/eulesia_v2"
+        );
+        assert_eq!(
+            ensure_host_in_url("postgres:///mydb"),
+            "postgres://localhost/mydb"
+        );
+    }
+
+    #[test]
+    fn ensure_host_preserves_existing_host() {
+        let url = "postgresql://user:pass@db.host:5432/mydb";
+        assert_eq!(ensure_host_in_url(url), url);
+    }
+
+    #[test]
+    fn ensure_host_preserves_localhost() {
+        let url = "postgresql://localhost/mydb";
+        assert_eq!(ensure_host_in_url(url), url);
+    }
 
     #[test]
     fn advisory_lock_key_is_stable() {

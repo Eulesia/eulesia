@@ -152,138 +152,7 @@ function SearchResultsList({ results, onResultClick }: SearchResultsListProps) {
 
   return (
     <div className="py-2">
-      {/* Users */}
-      {results.users.length > 0 && (
-        <ResultSection title={t("search.users")} icon={User}>
-          {results.users.map((user) => (
-            <Link
-              key={user.id}
-              to={`/user/${user.id}`}
-              onClick={onResultClick}
-              className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-            >
-              {user.avatarUrl ? (
-                <img
-                  src={user.avatarUrl}
-                  alt=""
-                  className="w-8 h-8 rounded-full object-cover"
-                />
-              ) : (
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 text-xs font-medium">
-                  {user.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .slice(0, 2)
-                    .toUpperCase()}
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                  {user.name}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                  @{user.username}
-                  {user.institutionName && ` · ${user.institutionName}`}
-                </div>
-              </div>
-              {user.role === "institution" && (
-                <span className="text-xs bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded">
-                  {user.institutionType === "municipality"
-                    ? t("search.municipality")
-                    : t("search.agency")}
-                </span>
-              )}
-            </Link>
-          ))}
-        </ResultSection>
-      )}
-
-      {/* Municipalities — merged into Locations section below */}
-
-      {/* Threads */}
-      {results.threads.length > 0 && (
-        <ResultSection title={t("search.threads")} icon={MessageSquare}>
-          {results.threads.map((thread) => (
-            <Link
-              key={thread.id}
-              to={`/agora/thread/${thread.id}`}
-              onClick={onResultClick}
-              className="block px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-            >
-              <div className="font-medium text-gray-900 dark:text-gray-100 line-clamp-1">
-                {thread.title}
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-0.5">
-                <span>{thread.authorName}</span>
-                {thread.municipalityName && (
-                  <>
-                    <span>·</span>
-                    <span>{thread.municipalityName}</span>
-                  </>
-                )}
-                <span>·</span>
-                <span>{t("search.replies", { count: thread.replyCount })}</span>
-              </div>
-            </Link>
-          ))}
-        </ResultSection>
-      )}
-
-      {/* Clubs */}
-      {results.clubs?.length > 0 && (
-        <ResultSection title={t("search.clubs")} icon={Users}>
-          {results.clubs.map((club) => (
-            <Link
-              key={club.id}
-              to={`/clubs/${club.id}`}
-              onClick={onResultClick}
-              className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-            >
-              <Users className="w-5 h-5 text-purple-500" />
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-gray-900 dark:text-gray-100">
-                  {club.name}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  {club.category && `${club.category} · `}
-                  {t("search.members", { count: club.memberCount })}
-                </div>
-              </div>
-            </Link>
-          ))}
-        </ResultSection>
-      )}
-
-      {/* Places */}
-      {results.places.length > 0 && (
-        <ResultSection title={t("search.places")} icon={MapPin}>
-          {results.places.map((place) => (
-            <Link
-              key={place.id}
-              to={`/kartta?place=${place.id}`}
-              onClick={onResultClick}
-              className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-            >
-              <MapPin className="w-5 h-5 text-gray-400 dark:text-gray-500" />
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-gray-900 dark:text-gray-100">
-                  {place.name}
-                </div>
-                {(place.category || place.municipalityName) && (
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    {place.category}
-                    {place.category && place.municipalityName && " · "}
-                    {place.municipalityName}
-                  </div>
-                )}
-              </div>
-            </Link>
-          ))}
-        </ResultSection>
-      )}
-
-      {/* Locations — includes municipalities + locations combined */}
+      {/* Locations — includes municipalities + locations (most important for civic platform) */}
       {(results.municipalities.length > 0 || results.locations?.length > 0) && (
         <ResultSection title={t("search.locations")} icon={MapPin}>
           {results.municipalities.map((m) => (
@@ -342,6 +211,135 @@ function SearchResultsList({ results, onResultClick }: SearchResultsListProps) {
                 </div>
               </Link>
             ))}
+        </ResultSection>
+      )}
+
+      {/* Places */}
+      {results.places.length > 0 && (
+        <ResultSection title={t("search.places")} icon={MapPin}>
+          {results.places.map((place) => (
+            <Link
+              key={place.id}
+              to={`/kartta?place=${place.id}`}
+              onClick={onResultClick}
+              className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            >
+              <MapPin className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-gray-900 dark:text-gray-100">
+                  {place.name}
+                </div>
+                {(place.category || place.municipalityName) && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    {place.category}
+                    {place.category && place.municipalityName && " · "}
+                    {place.municipalityName}
+                  </div>
+                )}
+              </div>
+            </Link>
+          ))}
+        </ResultSection>
+      )}
+
+      {/* Threads */}
+      {results.threads.length > 0 && (
+        <ResultSection title={t("search.threads")} icon={MessageSquare}>
+          {results.threads.map((thread) => (
+            <Link
+              key={thread.id}
+              to={`/agora/thread/${thread.id}`}
+              onClick={onResultClick}
+              className="block px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            >
+              <div className="font-medium text-gray-900 dark:text-gray-100 line-clamp-1">
+                {thread.title}
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-0.5">
+                <span>{thread.authorName}</span>
+                {thread.municipalityName && (
+                  <>
+                    <span>·</span>
+                    <span>{thread.municipalityName}</span>
+                  </>
+                )}
+                <span>·</span>
+                <span>{t("search.replies", { count: thread.replyCount })}</span>
+              </div>
+            </Link>
+          ))}
+        </ResultSection>
+      )}
+
+      {/* Clubs */}
+      {results.clubs?.length > 0 && (
+        <ResultSection title={t("search.clubs")} icon={Users}>
+          {results.clubs.map((club) => (
+            <Link
+              key={club.id}
+              to={`/clubs/${club.id}`}
+              onClick={onResultClick}
+              className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            >
+              <Users className="w-5 h-5 text-purple-500" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-gray-900 dark:text-gray-100">
+                  {club.name}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  {club.category && `${club.category} · `}
+                  {t("search.members", { count: club.memberCount })}
+                </div>
+              </div>
+            </Link>
+          ))}
+        </ResultSection>
+      )}
+
+      {/* Users */}
+      {results.users.length > 0 && (
+        <ResultSection title={t("search.users")} icon={User}>
+          {results.users.map((user) => (
+            <Link
+              key={user.id}
+              to={`/user/${user.id}`}
+              onClick={onResultClick}
+              className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            >
+              {user.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt=""
+                  className="w-8 h-8 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 text-xs font-medium">
+                  {user.name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .slice(0, 2)
+                    .toUpperCase()}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                  {user.name}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                  @{user.username}
+                  {user.institutionName && ` · ${user.institutionName}`}
+                </div>
+              </div>
+              {user.role === "institution" && (
+                <span className="text-xs bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded">
+                  {user.institutionType === "municipality"
+                    ? t("search.municipality")
+                    : t("search.agency")}
+                </span>
+              )}
+            </Link>
+          ))}
         </ResultSection>
       )}
 
