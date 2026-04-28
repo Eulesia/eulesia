@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { InstitutionalContext } from "../../lib/api";
+import { formatDateLong } from "../../lib/formatTime";
 
 interface InstitutionalContextBoxProps {
   context: InstitutionalContext;
@@ -203,11 +204,7 @@ export function InstitutionalContextBox({
                         </div>
                         <div className="flex-1 pb-2">
                           <p className="text-xs text-violet-600 font-medium">
-                            {date.toLocaleDateString("en-GB", {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                            })}
+                            {formatDateLong(item.date)}
                           </p>
                           <p className="text-sm text-violet-900">
                             {item.event}

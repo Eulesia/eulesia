@@ -12,6 +12,7 @@ import {
 import { useTranslation } from "react-i18next";
 import type { MapPoint } from "../../lib/api";
 import { useMapLocationDetails } from "../../hooks/useApi";
+import { formatRelativeTime } from "../../lib/formatTime";
 
 interface LocationDetailsProps {
   point: MapPoint;
@@ -145,7 +146,7 @@ export function LocationDetails({ point, onClose }: LocationDetailsProps) {
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-0.5">
                         <Clock className="w-3 h-3" />
-                        {new Date(thread.createdAt).toLocaleDateString()}
+                        {formatRelativeTime(thread.createdAt)}
                       </p>
                     </Link>
                   ))}

@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { formatRelativeTime } from "../../lib/formatTime";
+import { formatDateTimeLong, formatRelativeTime } from "../../lib/formatTime";
 
 interface EditedIndicatorProps {
   editedAt: string;
@@ -15,7 +15,7 @@ export function EditedIndicator({
   return (
     <span
       className="text-xs text-gray-400 italic"
-      title={new Date(editedAt).toLocaleString()}
+      title={formatDateTimeLong(editedAt)}
     >
       (
       {editorName

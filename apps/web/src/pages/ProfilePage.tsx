@@ -36,6 +36,7 @@ import {
 } from "../hooks/useApi";
 import { guides } from "../data/guides";
 import { api, type User } from "../lib/api";
+import { formatDateLong } from "../lib/formatTime";
 
 type CapacitorWindow = Window & {
   Capacitor?: {
@@ -339,7 +340,7 @@ export function ProfilePage() {
                   {s.expiresAt && (
                     <span className="text-xs text-red-600">
                       {t("profile:sanctions.expiresAt", {
-                        date: new Date(s.expiresAt).toLocaleDateString(),
+                        date: formatDateLong(s.expiresAt),
                       })}
                     </span>
                   )}

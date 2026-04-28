@@ -18,6 +18,7 @@ import {
   XCircle,
   Loader2,
 } from "lucide-react";
+import { formatDateLong } from "../../lib/formatTime";
 
 type StatusFilter = "pending" | "approved" | "rejected";
 
@@ -244,7 +245,7 @@ export function AdminWaitlistPage() {
                       {entry.name || "—"}
                     </td>
                     <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
-                      {new Date(entry.createdAt).toLocaleDateString()}
+                      {formatDateLong(entry.createdAt)}
                     </td>
                     <td className="px-4 py-3">
                       {entry.status === "pending" && (

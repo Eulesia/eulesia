@@ -29,6 +29,7 @@ import {
   Copy,
 } from "lucide-react";
 import { api } from "../../lib/api";
+import { formatDateLong } from "../../lib/formatTime";
 
 function ToggleSwitch({
   enabled,
@@ -585,8 +586,7 @@ export function AdminSettingsPage() {
                             {a.title}
                           </p>
                           <p className="text-xs text-gray-400 dark:text-gray-500">
-                            {a.createdByName} —{" "}
-                            {new Date(a.createdAt).toLocaleDateString("fi")}
+                            {a.createdByName} — {formatDateLong(a.createdAt)}
                           </p>
                         </div>
                       </div>

@@ -5,6 +5,7 @@ import {
   useAdminInstitutionClaims,
   useAdminUpdateClaim,
 } from "../../hooks/useAdminApi";
+import { formatDateLong } from "../../lib/formatTime";
 
 export function AdminInstitutionsPage() {
   const { t } = useTranslation("admin");
@@ -62,7 +63,7 @@ export function AdminInstitutionsPage() {
                     </div>
                     <div className="mt-1 text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      {new Date(claim.createdAt).toLocaleDateString()}
+                      {formatDateLong(claim.createdAt)}
                     </div>
                   </div>
                 </div>

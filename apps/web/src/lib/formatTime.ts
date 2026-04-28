@@ -62,6 +62,17 @@ export function formatDateLong(dateString: string): string {
   }).format(date);
 }
 
+export function formatDateTimeLong(dateString: string): string {
+  const date = new Date(dateString);
+  return new Intl.DateTimeFormat(i18n.language, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export function formatMessageDate(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
